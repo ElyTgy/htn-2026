@@ -4,14 +4,40 @@
     {
       "name": "fake-faces",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["pi/main.py", "--backend", "fake", "--port", "8080"],
+      "runtimeArgs": [
+        "pi/main.py",
+        "--backend",
+        "fake",
+        "--port",
+        "8080"
+      ],
       "port": 8080
     },
     {
       "name": "webcam",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["pi/main.py", "--backend", "mediapipe", "--source", "opencv", "--port", "8081"],
+      "runtimeArgs": [
+        "pi/main.py",
+        "--backend",
+        "mediapipe",
+        "--source",
+        "opencv",
+        "--port",
+        "8081"
+      ],
       "port": 8081
+    },
+    {
+      "name": "fake-faces-8090",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "pi/main.py",
+        "--backend",
+        "fake",
+        "--port",
+        "8090"
+      ],
+      "port": 8090
     }
   ]
 }

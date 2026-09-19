@@ -90,7 +90,12 @@ Copy `.env.example` to `.env` and paste a key from <https://console.deepgram.com
      origin you type in the address bar, e.g. `http://caption-pi-2.local:8080` (no trailing slash or
      path), set the dropdown to Enabled, and relaunch Chrome. It must be done in the browser on the
      device that opens the page.
-3. Open the page, tap **Start captions**, allow the mic.
+3. Open the page **with nothing after the `/`** (`https://<pi-ip>:8443/`), tap **Start captions**, allow
+   the mic. The page goes fullscreen and landscape, and stays black (= transparent in the glasses)
+   apart from the captions. If the address bar comes back (back swipe, screen lock), tap anywhere.
+   `?video=1&debug=1` is for debugging on a normal screen: `video=1` paints the camera feed over the
+   whole page, which in the glasses covers the real world, and turns calibration off. `?debug=1` and
+   `?debug=0` only apply to that visit; the Boxes button is what the device remembers.
 4. Put the glasses in head-locked ("follow") mode so the screen stays fixed to your view.
 
 ### Calibrate (once)

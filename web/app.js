@@ -18,9 +18,14 @@ const FINAL_KEEP_MS = 7000;     // finished sentences stay part of the caption t
 const FACE_GONE_MS = 1000;
 const SMOOTH = 0.35;
 
-const showVideo = params.has('video');
+// Two ways to open the page:
+//   /                    glasses: black (= transparent) page, fullscreen, captions only
+//   /?video=1&debug=1    debugging on a normal screen: camera feed, face boxes, status text
+// ?debug=1 / ?debug=0 apply to this visit only; the Boxes button is what gets remembered.
+const showVideo = params.has('video') && params.get('video') !== '0';
+const debugParam = params.has('debug') ? params.get('debug') !== '0' : null;
 const state = {
-  debug: params.has('debug') || store.get('debug') === '1',
+  debug: debugParam ?? store.get('debug') === '1',
   faces: new Map(),      // id → { target:{x,y,w,h}, x,y,w,h (smoothed), score, speaking, seen, box }
   captions: new Map(),   // face id | 'bar' → { finals:[{text,t}], interim, updated, how, el }
   wsStatus: 'connecting', sttStatus: 'idle', fps: 0,
@@ -258,6 +263,17 @@ async function refreshMics() {
   for (const m of await listMics()) sel.add(new Option(m.label, m.id, false, m.id === current));
 }
 
+// ---- glasses view -----------------------------------------------------------------------------
+// The glasses mirror the whole phone screen, so the address bar and a portrait layout would
+// show up too. Must be called from a tap. Skipped with ?video=1 (debugging on a normal screen).
+function enterGlassesView() {
+  const root = document.documentElement;
+  if (showVideo || document.fullscreenElement || !root.requestFullscreen) return;
+  root.requestFullscreen({ navigationUI: 'hide' })
+    .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+    .catch(() => {});
+}
+
 // ---- page wiring ------------------------------------------------------------------------------------
 function setStartStatus(extra) {
   $('start-status').textContent = extra || (state.wsStatus === 'connected' ? 'Connected to the camera.' : 'Connecting to the camera…');
@@ -280,10 +296,11 @@ async function init() {
 
   $('start-btn').addEventListener('click', async () => {
     $('start-btn').disabled = true;
+    // Before the mic prompt: by the time it's answered the tap no longer counts as a user gesture.
+    enterGlassesView();
     try {
       await startStt();
       $('start').hidden = true;
-      if (!showVideo && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
       if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
     } catch (e) {
       setStartStatus(e.message);
@@ -291,18 +308,20 @@ async function init() {
     }
   });
 
+  // Fullscreen drops out on a back swipe or when the screen turns off; any tap brings it back.
+  addEventListener('click', () => { if ($('start').hidden) enterGlassesView(); });
   $('settings-hotspot').addEventListener('click', () => { $('settings').hidden = !$('settings').hidden; });
   $('settings-close').addEventListener('click', () => { $('settings').hidden = true; });
   // Three ways to show/hide the face boxes (and status text), all kept in sync:
   // the corner button, the Settings checkbox, and the B key.
-  const setDebug = (on) => {
+  const setDebug = (on, remember = true) => {
     state.debug = on;
-    store.set('debug', on ? '1' : '0');
+    if (remember) store.set('debug', on ? '1' : '0');
     $('hud').hidden = !on;
     $('debug-toggle').checked = on;
     $('boxes-btn').setAttribute('aria-pressed', String(on));
   };
-  setDebug(state.debug);
+  setDebug(state.debug, false);
   $('debug-toggle').addEventListener('change', (e) => setDebug(e.target.checked));
   $('boxes-btn').addEventListener('click', () => setDebug(!state.debug));
   addEventListener('keydown', (e) => {
