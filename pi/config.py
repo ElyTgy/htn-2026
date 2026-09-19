@@ -18,7 +18,16 @@ class Config:
 
     # Tracker
     track_max_dist: float = 0.15   # max centre jump (fraction of frame width) to keep the same ID
-    track_max_age: float = 1.0     # seconds a track survives without a detection
+    track_max_age: float = 2.0     # seconds a track survives without a detection
+
+    # Remembering people across tracking dropouts (identity.py)
+    identity_threshold: float = 0.363   # cosine similarity to count as the same person (SFace's
+                                        # recommended value; raise if two people get merged,
+                                        # lower if one person keeps getting new numbers)
+    identity_refresh: float = 1.0       # seconds between new signatures for a tracked face
+    identity_gallery: int = 12          # signatures kept per person (covers different angles)
+    identity_min_face_px: int = 48      # faces narrower than this are too small to identify
+    identity_merge_window: float = 3.0  # how long a brand-new person may still be merged into a known one
 
     # Active speaker (mouth_open = inner-lip gap / face height)
     speak_window: float = 0.6      # seconds of mouth history used for the score

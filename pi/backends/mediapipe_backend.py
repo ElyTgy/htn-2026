@@ -81,7 +81,14 @@ class MediaPipeBackend:
             gap = _dist_px(lm[LIP_UPPER_INNER], lm[LIP_LOWER_INNER], w_px, h_px)
             face_h = _dist_px(lm[FOREHEAD], lm[CHIN], w_px, h_px)
             mouth = gap / face_h if face_h > 1e-6 else 0.0
-            detections.append(Detection(x0, y0, x1 - x0, y1 - y0, mouth))
+            keypoints = [
+                _mid(lm[33], lm[133]),    # person's right eye (corners averaged)
+                _mid(lm[362], lm[263]),   # person's left eye
+                (lm[1].x, lm[1].y),       # nose tip
+                (lm[61].x, lm[61].y),     # right mouth corner
+                (lm[291].x, lm[291].y),   # left mouth corner
+            ]
+            detections.append(Detection(x0, y0, x1 - x0, y1 - y0, mouth, keypoints))
         return ts, detections
 
     def latest_frame(self):
@@ -92,6 +99,10 @@ class MediaPipeBackend:
         if self._landmarker is not None:
             self._landmarker.close()
             self._landmarker = None
+
+
+def _mid(a, b):
+    return ((a.x + b.x) / 2, (a.y + b.y) / 2)
 
 
 def _dist_px(a, b, w, h):

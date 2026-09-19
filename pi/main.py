@@ -18,12 +18,14 @@ from dotenv import load_dotenv  # noqa: E402
 from active_speaker import ActiveSpeakerDetector  # noqa: E402
 from backends import make_backend  # noqa: E402
 from config import ROOT, Config  # noqa: E402
+from identity import FaceMemory  # noqa: E402
 from server import CaptionServer  # noqa: E402
 from tracking import Tracker  # noqa: E402
 
 
-def vision_loop(cfg, backend, server, stop):
+def vision_loop(cfg, backend, server, stop, remember_faces=True):
     tracker = Tracker(cfg)
+    memory = FaceMemory(cfg, enabled=remember_faces)
     speakers = ActiveSpeakerDetector(cfg)
     min_gap = 1.0 / cfg.send_hz
     last_sent = 0.0
@@ -43,13 +45,16 @@ def vision_loop(cfg, backend, server, stop):
                 break
             ts, detections = got
             tracks = tracker.update(ts, detections)
+            # Track IDs change whenever a face is lost and found again; person IDs don't.
+            # The page only ever sees person IDs.
+            people = memory.update(ts, backend.latest_frame(), tracks, tracker.tracks.keys())
 
             faces = []
             for tr in tracks:
                 score, speaking = speakers.update(ts, tr.id, tr.det.mouth_open)
                 d = tr.det
                 faces.append({
-                    "id": tr.id,
+                    "id": people[tr.id],
                     "x": round(d.x, 4), "y": round(d.y, 4), "w": round(d.w, 4), "h": round(d.h, 4),
                     "mouth": round(d.mouth_open, 4),
                     "score": round(score, 3),
@@ -80,6 +85,8 @@ def main():
     p.add_argument("--https", action="store_true", help="serve over HTTPS with certs/cert.pem (scripts/make_cert.sh)")
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
+    p.add_argument("--no-face-memory", action="store_true",
+                   help="don't remember people across tracking dropouts (see pi/identity.py)")
     args = p.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -92,7 +99,7 @@ def main():
     # prompt) on the main thread. It makes no difference on the Pi.
     server.start_in_thread(https=args.https)
     try:
-        vision_loop(cfg, backend, server, threading.Event())
+        vision_loop(cfg, backend, server, threading.Event(), remember_faces=not args.no_face_memory)
     except KeyboardInterrupt:
         print("\nstopping")
 

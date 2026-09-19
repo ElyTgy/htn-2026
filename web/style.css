@@ -73,6 +73,14 @@ button:disabled { opacity: 0.4; }
   position: fixed; left: 0; top: 0; width: 64px; height: 64px;
   background: transparent; border: none; padding: 0;
 }
+/* Kept dim on purpose: anything bright is visible in the glasses all the time. */
+#boxes-btn {
+  position: fixed; left: 8px; bottom: 8px;
+  font-size: 13px; padding: 8px 12px;
+  color: #777; background: #000; border: 1px solid #333;
+}
+#boxes-btn[aria-pressed="true"] { color: #3cf; border-color: #3cf; }
+
 #settings {
   position: fixed; left: 8px; top: 8px; width: min(340px, calc(100vw - 16px));
   max-height: calc(100vh - 16px); overflow: auto;

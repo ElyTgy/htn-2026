@@ -96,6 +96,10 @@ Tap the top-left corner → Settings → **Show face boxes** → **XREAL startin
 and nudge with the arrows / Bigger / Smaller until the box sits on their real face. It's saved on the device.
 If boxes move the opposite way to the person, tick **Mirror horizontally**.
 
+### Face boxes on/off
+The dim **Boxes** button in the bottom-left corner shows or hides the boxes around faces and the status
+text. The **B** key and the Settings checkbox do the same; the choice is remembered on the device.
+
 ### Which mic
 Settings → Microphone. Test the glasses' mics first: if people 1-2 m away come through quiet or choppy
 (they're tuned for the wearer's own voice), switch to the Beam Pro's mic and keep it on the table.
@@ -109,11 +113,20 @@ Settings → Microphone. Test the glasses' mics first: if people 1-2 m away come
    a video file). These two seams are what make the Jetson / OAK-1 port a backend swap.
 2. **Stable IDs.** `tracking.py` matches each detection to the nearest previous face so a person keeps
    the same ID from frame to frame.
-3. **Who is talking.** `active_speaker.py` keeps 0.6 s of `mouth_open` per face. A talking mouth opens
+3. **Remembering people.** `identity.py` maps each track to a *person*. Tracks break whenever a face
+   is lost for a moment (head turn, blur, a hand in the way) and come back with a new track ID. So
+   about once a second each tracked face gets a signature (a 128-number embedding from OpenCV's SFace
+   model, aligned using five landmarks), and a new track is compared with everyone seen this session:
+   a match (cosine similarity ≥ 0.363) gets its old person ID back. Two faces in view can never share
+   an ID, and a face whose first frame was too blurry to match is merged into the right person within
+   3 s once a clear frame arrives. The page only sees person IDs, so caption colour and the learned
+   voice label survive dropouts. Signatures are anonymous numbers held in memory only: never saved,
+   never sent anywhere, never tied to a name, and gone when the program exits. `--no-face-memory` turns it off.
+4. **Who is talking.** `active_speaker.py` keeps 0.6 s of `mouth_open` per face. A talking mouth opens
    and closes several times a second, so the *spread* (standard deviation) is high; a closed mouth, or
    one held open in a smile, has low spread. Spread is scaled to a 0-1 speaking score with on/off
    thresholds and a short hold so it doesn't flicker. Measured on a laptop webcam: ~0.02 at rest, 0.4-1.0 while talking.
-4. **Server.** `server.py` (aiohttp) serves the page, pushes one JSON message per frame over a WebSocket
+5. **Server.** `server.py` (aiohttp) serves the page, pushes one JSON message per frame over a WebSocket
    (rate-limited to 15 Hz), hands out short-lived transcription credentials so API keys stay in `.env`,
    and offers an MJPEG debug feed. The camera loop owns the main thread and the server runs in a
    background thread; macOS only delivers camera frames on the main thread, and the Pi doesn't care.
@@ -150,8 +163,9 @@ Where it struggles:
 - **Very short replies** ("yeah", "mm-hm"): often the wrong voice label and too little lip movement.
 - **Your own voice** is transcribed too and goes to the bottom bar, as does anyone out of the camera's view.
 - **A new voice** needs a few sentences before its label is trusted.
-- **Lost tracking.** If a face is lost and found again it gets a new ID: new colour, and its voice label
-  must be relearned. (Fix: carry identity over when a face reappears near where it vanished.)
+- **Lost tracking** used to give a returning face a new number (new colour, voice relearned). Face
+  memory (`pi/identity.py`) now gives it the old number back, as long as the face is big and frontal
+  enough for a signature (at least ~48 px wide).
 
 Test without a second person: point the webcam at a screen playing a two-person interview with sound on.
 

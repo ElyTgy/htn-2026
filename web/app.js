@@ -293,10 +293,21 @@ async function init() {
 
   $('settings-hotspot').addEventListener('click', () => { $('settings').hidden = !$('settings').hidden; });
   $('settings-close').addEventListener('click', () => { $('settings').hidden = true; });
-  $('debug-toggle').addEventListener('change', (e) => {
-    state.debug = e.target.checked;
-    store.set('debug', state.debug ? '1' : '0');
-    $('hud').hidden = !state.debug;
+  // Three ways to show/hide the face boxes (and status text), all kept in sync:
+  // the corner button, the Settings checkbox, and the B key.
+  const setDebug = (on) => {
+    state.debug = on;
+    store.set('debug', on ? '1' : '0');
+    $('hud').hidden = !on;
+    $('debug-toggle').checked = on;
+    $('boxes-btn').setAttribute('aria-pressed', String(on));
+  };
+  setDebug(state.debug);
+  $('debug-toggle').addEventListener('change', (e) => setDebug(e.target.checked));
+  $('boxes-btn').addEventListener('click', () => setDebug(!state.debug));
+  addEventListener('keydown', (e) => {
+    const typing = e.target instanceof Element && e.target.closest('input, select, textarea');
+    if (e.key && e.key.toLowerCase() === 'b' && !typing) setDebug(!state.debug);
   });
   sttSel.addEventListener('change', () => { store.set('stt', sttSel.value); if (state.provider) startStt().catch(showSttError); });
   $('mic-select').addEventListener('change', (e) => { store.set('mic', e.target.value); if (state.provider) startStt().catch(showSttError); });

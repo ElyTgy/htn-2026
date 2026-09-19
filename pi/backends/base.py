@@ -18,6 +18,10 @@ class Detection:
     w: float
     h: float
     mouth_open: float  # inner-lip gap divided by face height
+    # Optional, for remembering who is who (identity.py): five (x, y) points as fractions of the
+    # frame, in this order: the person's right eye, left eye, nose tip, right and left mouth corners.
+    # ("Right" is the person's own right, so it appears on the left of the image.)
+    keypoints: Optional[list] = None
 
 
 class VisionBackend(Protocol):
