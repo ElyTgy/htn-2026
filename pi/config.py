@@ -28,7 +28,9 @@ class Config:
     speak_hold: float = 0.4        # seconds to keep "speaking" after the score drops
 
     # Server
-    host: str = "0.0.0.0"
+    # None = listen on every interface over both IPv4 and IPv6. Phone hotspots are often
+    # IPv6-only for laptops and Android devices, so an IPv4-only server would be unreachable.
+    host: str | None = None
     port: int = 8080
     send_hz: float = 15.0          # max frame messages per second to the page
     default_stt: str = "deepgram"

@@ -74,6 +74,11 @@ Copy `.env.example` to `.env` and paste a key from <https://console.deepgram.com
 
 1. Put the Pi and the Beam Pro on the **same network with internet**. Event Wi-Fi usually blocks
    device-to-device traffic; a phone hotspot works.
+   **Address to use.** Phone hotspots are often IPv6-only for laptops and Android devices, so the Pi's
+   `172.20.10.x` / `192.168.x.x` address may be unreachable from the Beam Pro. Use the Pi's name
+   instead, `http://<pi-hostname>.local:8080/` (run `hostname` on the Pi; if another device already
+   claimed the name it becomes `<name>-2`), or its global IPv6 address in brackets,
+   `http://[2605:...]:8080/` (from `hostname -I`). Wherever this README says `<pi-ip>`, use that.
 2. **Mic permission.** Chrome only allows the mic on `https://` or `localhost`. Pick one:
    - Open `chrome://flags`, search "Insecure origins treated as secure", add `http://<pi-ip>:8080`, enable, relaunch; or
    - On the Pi run `scripts/make_cert.sh`, start with `--https`, open `https://<pi-ip>:8080/` and accept the warning once.
