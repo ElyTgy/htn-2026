@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Caption Glasses</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <img id="video" alt="" hidden>
+  <div id="stage"></div>
+  <div id="bar"></div>
+  <div id="hud" hidden></div>
+
+  <div id="start">
+    <h1>Caption Glasses</h1>
+    <p id="start-status">Connecting…</p>
+    <button id="start-btn">Start captions</button>
+    <p class="hint">Black shows as transparent in the glasses. Tap the top-left corner for settings.</p>
+  </div>
+
+  <button id="settings-hotspot" aria-label="Settings"></button>
+  <div id="settings" hidden>
+    <h2>Settings</h2>
+    <label>Microphone <select id="mic-select"></select></label>
+    <label>Transcription <select id="stt-select"></select></label>
+    <label class="row"><input type="checkbox" id="debug-toggle"> Show face boxes</label>
+    <label class="row"><input type="checkbox" id="mirror-toggle"> Mirror horizontally</label>
+
+    <h3>Calibration</h3>
+    <p class="hint">Turn on face boxes, look at someone, then nudge until the box sits on their face.</p>
+    <div id="cal-grid">
+      <button data-cal="oy" data-d="-1">↑</button>
+      <button data-cal="ox" data-d="-1">←</button>
+      <button data-cal="ox" data-d="1">→</button>
+      <button data-cal="oy" data-d="1">↓</button>
+      <button data-cal="s" data-d="-1">Smaller</button>
+      <button data-cal="s" data-d="1">Bigger</button>
+      <button data-cal="sx" data-d="-1">Narrower</button>
+      <button data-cal="sx" data-d="1">Wider</button>
+    </div>
+    <div class="row">
+      <button id="cal-preset">XREAL starting point</button>
+      <button id="cal-reset">Reset</button>
+    </div>
+    <pre id="cal-readout"></pre>
+    <button id="settings-close">Close</button>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

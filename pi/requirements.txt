@@ -1,0 +1,8 @@
+# 0.10.18 is the newest release that has both a Raspberry Pi (linux aarch64, Python 3.9-3.12)
+# wheel and works on macOS. mediapipe 1.0.1 crashes on macOS at startup ("Service is
+# unavailable"); it may be fine on Linux, so it is the thing to try if your Pi has Python 3.13.
+mediapipe==0.10.18
+opencv-python-headless>=4.9
+aiohttp>=3.9
+numpy<2
+python-dotenv
