@@ -271,8 +271,17 @@ function enterGlassesView() {
   if (showVideo || document.fullscreenElement || !root.requestFullscreen) return;
   root.requestFullscreen({ navigationUI: 'hide' })
     .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
-    .catch(() => {});
+    .catch((e) => report(`fullscreen/landscape refused: ${e.message}`));
 }
+
+// What the glasses are being handed, for the server log: a visible address bar or a portrait
+// page both show up as a window floating in front of you.
+function reportView() {
+  report(`view ${location.pathname}${location.search} fullscreen=${!!document.fullscreenElement} ` +
+    `page=${innerWidth}x${innerHeight} screen=${screen.width}x${screen.height} ` +
+    `video=${showVideo} boxes=${state.debug} ua=${navigator.userAgent}`);
+}
+addEventListener('fullscreenchange', reportView);
 
 // ---- page wiring ------------------------------------------------------------------------------------
 function setStartStatus(extra) {
@@ -292,6 +301,7 @@ async function init() {
   $('debug-toggle').checked = state.debug;
   bindCalibrationUi(cal, $('settings'));
   connectWs();
+  reportView();
   requestAnimationFrame(render);
 
   $('start-btn').addEventListener('click', async () => {
@@ -301,6 +311,7 @@ async function init() {
     try {
       await startStt();
       $('start').hidden = true;
+      reportView();
       if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
     } catch (e) {
       setStartStatus(e.message);
