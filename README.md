@@ -18,6 +18,9 @@ face on camera (you, or someone out of view) goes to a bar at the bottom.
 Built at Hack the North 2026. Phase 1 (this repo) is captions; phase 2 is haptic motors around the
 head that buzz in the direction of sound.
 
+**Just want it running?** [docs/SETUP.md](docs/SETUP.md) is the short runbook: the laptop (debug)
+link, the glasses link, calibration, and what to check when captions don't show up.
+
 **Contents:** [Quick start](#1-try-it-on-a-laptop-first-no-pi-no-glasses) ·
 [Pi setup](#2-raspberry-pi-5-setup) · [Beam Pro](#4-on-the-beam-pro) ·
 [How it works](#how-it-works) · [Two people talking](#two-people-talking) ·
