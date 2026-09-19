@@ -219,6 +219,29 @@ async def deepgram_token(query):
     return {"scheme": "token", "credential": key}
 
 
+async def speechmatics_token(query):
+    load_dotenv(ROOT / ".env", override=True)
+    key = os.environ.get("SPEECHMATICS_API_KEY", "").strip()
+    if not key:
+        raise TokenError("SPEECHMATICS_API_KEY is not set (add it to .env)")
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.post(
+                "https://mp.speechmatics.com/v1/api_keys?type=rt",
+                headers={"Authorization": f"Bearer {key}"}, json={"ttl": 60},
+            ) as response:
+                if response.status not in (200, 201):
+                    raise TokenError(f"Speechmatics token request failed (HTTP {response.status}); check your key and account")
+                body = await response.json()
+                credential = body.get("key_value")
+                if not isinstance(credential, str) or not credential:
+                    raise TokenError("Speechmatics returned no temporary credential")
+                return {"credential": credential}
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+        raise TokenError("Could not obtain a Speechmatics temporary token; check connectivity and retry") from e
+
+
 TOKEN_HANDLERS = {
     "deepgram": deepgram_token,
+    "speechmatics": speechmatics_token,
 }

@@ -5,6 +5,7 @@
 // then pick it in Settings or with ?stt=<name>.
 //
 // A provider is created with { onTranscript, onStatus } and must implement:
+// Optional callback onSessionStart() resets learned voice labels on each new audio session.
 //   needsMic            boolean; false for providers that don't use the microphone
 //   async start(stream) begin transcribing the given MediaStream (null if !needsMic)
 //   stop()              stop and release everything

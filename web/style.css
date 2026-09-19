@@ -1,7 +1,7 @@
 /* Black = transparent on the glasses' additive display, so everything that isn't
    a caption stays pure black, and text uses bright colours with no dark outlines. */
 :root {
-  --caption-size: clamp(18px, 3.2vw, 40px);
+  --caption-size: clamp(18px, 2.3vw, 32px);
 }
 * { box-sizing: border-box; }
 html, body {
@@ -15,19 +15,19 @@ html, body {
 
 .caption {
   position: absolute; left: 0; top: 0;
-  width: max-content; max-width: 46vw;
+  width: min(440px, 42vw);
   transform: translate(-50%, -100%);
-  font-size: var(--caption-size); font-weight: 650; line-height: 1.2;
-  text-align: center; text-wrap: balance;
-  /* show the newest words: clip from the top, keep the bottom two lines */
-  max-height: calc(var(--caption-size) * 1.2 * 2);
-  overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
-  transition: opacity 0.4s;
+  font-size: var(--caption-size); font-weight: 600; line-height: 1.35;
+  text-align: left;
+  height: calc(var(--caption-size) * 1.35 * 2 + 16px);
+  padding: 8px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.72);
+  overflow: hidden;
+  transition: opacity 0.25s;
   will-change: transform;
 }
-.caption .interim { opacity: 0.65; }
-.caption.hidden { opacity: 0; }
-.caption .arrow { font-size: 0.8em; }
+.caption.hidden, .caption.empty { opacity: 0; }
+.caption-text { display: block; white-space: pre; overflow: hidden; }
+.arrow { position: absolute; right: 2px; top: 0; font-size: 0.65em; }
 
 .facebox {
   position: absolute; left: 0; top: 0;
@@ -39,15 +39,15 @@ html, body {
 
 #bar {
   position: fixed; left: 50%; bottom: 4vh; transform: translateX(-50%);
-  width: max-content; max-width: 80vw;
-  font-size: calc(var(--caption-size) * 0.8); font-weight: 600; line-height: 1.2;
-  color: #bbb; text-align: center;
-  max-height: calc(var(--caption-size) * 0.8 * 1.2 * 2);
-  overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
-  transition: opacity 0.4s;
+  width: min(640px, 80vw);
+  font-size: calc(var(--caption-size) * 0.8); font-weight: 600; line-height: 1.35;
+  color: #ddd; text-align: left;
+  height: calc(var(--caption-size) * 0.8 * 1.35 * 2 + 16px);
+  padding: 8px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.72);
+  overflow: hidden;
+  transition: opacity 0.25s;
 }
-#bar.hidden { opacity: 0; }
-#bar .interim { opacity: 0.65; }
+#bar.hidden, #bar.empty { opacity: 0; }
 
 #hud {
   position: fixed; right: 8px; top: 8px;

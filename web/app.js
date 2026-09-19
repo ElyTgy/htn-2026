@@ -1,8 +1,10 @@
 import { Attributor } from './attribution.js';
+import { CaptionBuffer, captionLines, smoothAnchor } from './captions.js';
 import { Calibration, bindCalibrationUi } from './calibrate.js';
 import { createProvider, listProviders } from './stt/provider.js';
 import { openMic, closeMic, listMics } from './stt/mic.js';
 import './stt/deepgram.js';
+import './stt/speechmatics.js';
 import './stt/mock.js';
 
 const params = new URLSearchParams(location.search);
@@ -27,7 +29,7 @@ const debugParam = params.has('debug') ? params.get('debug') !== '0' : null;
 const state = {
   debug: debugParam ?? store.get('debug') === '1',
   faces: new Map(),      // id → { target:{x,y,w,h}, x,y,w,h (smoothed), score, speaking, seen, box }
-  captions: new Map(),   // face id | 'bar' → { finals:[{text,t}], interim, updated, how, el }
+  captions: new Map(),   // face id | 'bar' → caption DOM and smoothed anchor
   wsStatus: 'connecting', sttStatus: 'idle', fps: 0,
   provider: null, mic: null,
 };
@@ -39,6 +41,9 @@ addEventListener('error', (e) => report(`JS error: ${e.message} (${e.filename}:$
 addEventListener('unhandledrejection', (e) => report(`JS rejection: ${e.reason && e.reason.message || e.reason}`));
 
 const attributor = new Attributor();
+const captionBuffer = new CaptionBuffer();
+const textMeasure = document.createElement('canvas').getContext('2d');
+let lastRender = performance.now(), nextTextPaint = 0;
 const cal = new Calibration({ forceIdentity: showVideo });
 
 // ---- face data from the Pi -------------------------------------------------------------
@@ -70,34 +75,45 @@ function captionFor(key) {
       el.style.color = COLOURS[(key - 1) % COLOURS.length];
       $('stage').appendChild(el);
     }
-    // One inner block so the flex container can bottom-align it and clip older lines off the top.
-    el.innerHTML = '<div><span class="arrow"></span><span class="final"></span> <span class="interim"></span></div>';
-    state.captions.set(key, (c = { finals: [], interim: '', updated: 0, how: '', el }));
+    el.innerHTML = '<span class="arrow"></span><span class="caption-text"></span>';
+    state.captions.set(key, (c = { updated: 0, how: '', el, textEl: el.querySelector('.caption-text'), anchor: null }));
   }
   return c;
 }
 
 function onTranscript(event) {
   const now = performance.now();
-  // A new event replaces whatever was provisional before it.
-  for (const c of state.captions.values()) c.interim = '';
-  for (const run of attributor.splitRuns(event)) {
-    const { faceId, how } = attributor.attribute(run.startMs, run.endMs, run.speaker);
+  const runs = attributor.splitRuns(event).filter(run => run.text.trim()).map(run => {
+    let decision = attributor.attribute(run.startMs, run.endMs, run.speaker, event.isFinal);
+    // Keep a provisional stretch on the same face while its wording is revised.
+    // A final result or a changed voice label can correct that placement.
+    const previous = captionBuffer.partial.find(p => p.speaker === run.speaker &&
+      Math.abs(p.startMs - run.startMs) < 100 && p.endMs > run.startMs);
+    if (!event.isFinal && previous?.faceId != null && state.faces.has(previous.faceId)) {
+      decision = { faceId: previous.faceId, how: previous.how };
+    }
+    const { faceId, how } = decision;
     if (event.isFinal) {
       const lips = attributor.lipEvidence(run.startMs, run.endMs).map((e) => `#${e.id}=${e.score.toFixed(2)}`).join(' ');
       report(`"${run.text}" → ${faceId === null ? 'bar' : `face #${faceId}`} (${how}) voice=${run.speaker ?? '-'} lips[${lips}] lag=${Math.round(now - run.endMs)}ms`);
     }
     const c = captionFor(faceId ?? 'bar');
-    if (event.isFinal) c.finals.push({ text: run.text, t: now });
-    else c.interim = c.interim ? `${c.interim} ${run.text}` : run.text;
+    if (now - c.updated >= CAPTION_HOLD_MS) c.anchor = null;
     c.updated = now;
     c.how = how;
-  }
+    return { ...run, faceId, how,
+      words: event.words?.filter(w => w.startMs >= run.startMs && w.endMs <= run.endMs) };
+  });
+  captionBuffer.update(event, runs, now);
 }
 
 // ---- drawing --------------------------------------------------------------------------------
 function render() {
   const now = performance.now();
+  const dt = Math.min(now - lastRender, 100);
+  lastRender = now;
+  const paintText = now >= nextTextPaint;
+  if (paintText) nextTextPaint = now + 100;
 
   for (const [id, f] of state.faces) {
     if (now - f.seen > FACE_GONE_MS) {
@@ -110,7 +126,6 @@ function render() {
   }
 
   for (const [key, c] of state.captions) {
-    c.finals = c.finals.filter((s) => now - s.t < FINAL_KEEP_MS);
     const face = key === 'bar' ? null : state.faces.get(key);
     const live = now - c.updated < CAPTION_HOLD_MS && (key === 'bar' || face);
     c.el.classList.toggle('hidden', !live);
@@ -118,9 +133,22 @@ function render() {
       if (key !== 'bar' && !face && now - c.updated > FINAL_KEEP_MS) { c.el.remove(); state.captions.delete(key); }
       continue;
     }
-    c.el.querySelector('.final').textContent = c.finals.map((s) => s.text).join(' ');
-    c.el.querySelector('.interim').textContent = c.interim;
-    if (face) placeCaption(c.el, face);
+    if (paintText) {
+      let text = captionBuffer.textFor(key);
+      c.el.classList.toggle('empty', !text);
+      const width = c.textEl.clientWidth;
+      if (text !== c.sourceText || width !== c.textWidth) {
+        const style = getComputedStyle(c.textEl);
+        textMeasure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        captionBuffer.compact(key, width, s => textMeasure.measureText(s).width);
+        text = captionBuffer.textFor(key);
+        const displayed = captionLines(text, width, s => textMeasure.measureText(s).width);
+        if (c.textEl.textContent !== displayed) c.textEl.textContent = displayed;
+        c.sourceText = text;
+        c.textWidth = width;
+      }
+    }
+    if (face) placeCaption(c, face, dt);
   }
 
   if (state.debug) {
@@ -133,9 +161,10 @@ function render() {
   requestAnimationFrame(render);
 }
 
-function placeCaption(el, f) {
+function placeCaption(c, f, dt) {
+  const el = c.el;
   let [x, y] = cal.map(f.x + f.w / 2, f.y);
-  y -= 10;
+  y -= 18;
   // Faces the camera can see but the display can't reach: pin to the edge and point at them.
   const halfW = el.offsetWidth / 2, h = el.offsetHeight, m = 8;
   let arrow = '';
@@ -144,7 +173,8 @@ function placeCaption(el, f) {
   if (y < h + m) { if (y < 0 && !arrow) arrow = '▲ '; y = h + m; }
   else if (y > innerHeight - m) { if (!arrow) arrow = '▼ '; y = innerHeight - m; }
   el.querySelector('.arrow').textContent = arrow;
-  el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+  c.anchor = smoothAnchor(c.anchor, x, y, dt);
+  el.style.transform = `translate(${c.anchor.x.toFixed(1)}px, ${c.anchor.y.toFixed(1)}px) translate(-50%, -100%)`;
 }
 
 function drawFaceBox(id, f) {
@@ -164,6 +194,17 @@ function drawFaceBox(id, f) {
 }
 
 // ---- transcription lifecycle ------------------------------------------------------------------
+function resetTranscript() {
+  attributor.resetVoices();
+  captionBuffer.reset();
+  for (const c of state.captions.values()) {
+    c.updated = -Infinity;
+    c.sourceText = '';
+    c.textEl.textContent = '';
+    c.anchor = null;
+  }
+}
+
 // Calls are queued so two quick triggers (Start + a settings change, say) can't interleave
 // and leave one provider recording from a microphone the other one just closed.
 let sttQueue = Promise.resolve();
@@ -174,9 +215,11 @@ function startStt() {
 
 async function startSttNow() {
   stopStt();
+  resetTranscript();
   const name = $('stt-select').value;
   const provider = createProvider(name, {
     onTranscript,
+    onSessionStart: resetTranscript,
     onStatus: (s) => {
       if (state.sttStatus !== `${name}: ${s}`) report(`stt ${name}: ${s}`);
       state.sttStatus = `${name}: ${s}`;
@@ -194,7 +237,8 @@ async function startSttNow() {
     watchMic(state.mic);
   }
   state.provider = provider;
-  await provider.start(state.mic);
+  try { await provider.start(state.mic); }
+  catch (e) { stopStt(); throw e; }
 }
 
 function stopStt() {

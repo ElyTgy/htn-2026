@@ -12,7 +12,7 @@ const PARAMS = new URLSearchParams({
 });
 const MIME = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
 
-function create({ onTranscript, onStatus }) {
+function create({ onTranscript, onStatus, onSessionStart = () => {} }) {
   let ws = null, recorder = null, stream = null, t0 = 0, stopped = false, retryTimer = null;
   let bytesSent = 0;
   let useKey = false; // set if a short-lived token is refused, so the retry uses the API key instead
@@ -75,6 +75,7 @@ function create({ onTranscript, onStatus }) {
       return;
     }
     t0 = performance.now(); // Deepgram's timestamps count from the first audio byte
+    onSessionStart();
     onStatus(`listening (${mimeType || 'default format'})`);
   }
 

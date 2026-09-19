@@ -146,21 +146,26 @@ Settings → Microphone. Test the glasses' mics first: if people 1-2 m away come
    text, final/interim, start and end time on the page's clock, and optionally per-word timings and a
    voice label per word.
 2. **Attribution** (`attribution.js`, unit-tested under Node). Face messages are timestamped on arrival
-   and kept for 6 s. For each stretch of words by one voice, the page averages every face's speaking
+   and kept for 12 s. For each stretch of words by one voice, the page averages every face's speaking
    score over the time those words were *spoken* (shifted by ~250 ms for camera and scoring lag), not
    when the text arrived. Then, in order:
-   - one face clearly ahead (score ≥ 0.40 and ≥ 0.15 above the runner-up) → that face, and the voice
-     label gets a vote for that face;
-   - otherwise, if the voice label has been learned (≥ 3 votes and twice its second choice) → that
-     face if it's in view, else the bottom bar;
-   - otherwise a weak best guess (≥ 0.25), else the bottom bar.
+   - a learned voice label (≥ 3 votes and twice its second choice) keeps its face through brief
+     lip-score spikes at turn changes; sustained clear contradictory lips can correct it;
+   - one face clearly ahead (score ≥ 0.40 and ≥ 0.15 above the runner-up) → that face;
+   - otherwise the bottom bar, rather than guessing between faces.
+   Only finalized, non-duplicate audio stretches of at least 250 ms train voice bindings.
+   A new short voice isn't assigned to a face already bound to another voice, and missing historical
+   frames aren't replaced with unrelated current frames.
    A voice that keeps speaking while nobody's lips move is learned as "the wearer / off-screen" and
-   stays in the bottom bar even if a listener nods or mouths along. A clear lip result is never
-   overridden by a voice label.
+   stays in the bottom bar even if a listener nods or mouths along. A clear lip result is
+   used to correct a voice label only when it is sustained for at least 600 ms.
 3. **Drawing.** Camera and display are both fixed to the head, so camera→screen is four numbers (scale
    about the centre, offset) set once in Settings and stored on the device. Captions are smoothed,
-   coloured per person, show the newest two lines, fade 4 s after the last word, and are pinned to the
+   coloured per person, use a fixed-width two-line panel with left-aligned text, fade 4 s after the
+   last word, and are pinned to the
    screen edge with an arrow when the camera can see a face the display can't reach.
+   Small camera movements stay inside an 8 px dead zone; larger movements follow smoothly.
+   Text updates at most ten times per second, and finalizing a prefix preserves remaining interim words.
 
 ## Two people talking
 
@@ -180,6 +185,41 @@ Where it struggles:
 Test without a second person: point the webcam at a screen playing a two-person interview with sound on.
 
 ## Transcription options
+
+### Try Speechmatics Enhanced
+
+1. Create an API key at <https://portal.speechmatics.com/> and add
+   `SPEECHMATICS_API_KEY=your-key` to `.env` on the machine serving the page.
+2. Restart the Python server after installing this code, then open
+   `https://<pi-hostname>.local:8443/?stt=speechmatics&debug=1` (or
+   `http://localhost:8080/?stt=speechmatics&debug=1` on a laptop).
+3. Tap **Start captions**. You can also select **Speechmatics Enhanced (live + speakers)**
+   in Settings → transcription provider. Switch to Deepgram there for comparison.
+
+This uses Speechmatics' highest-accuracy Realtime model (`enhanced`), live speaker
+diarization, word timestamps, and partial transcripts. Finalization is configured at
+`max_delay: 0.7` with `max_delay_mode: fixed`; this is a server processing target,
+not a guarantee of total microphone-to-display latency. For more accuracy at the cost
+of slower final captions, try `max_delay: 1.5` in `web/stt/speechmatics.js`.
+
+The browser sends mono raw PCM in approximately 40 ms packets directly to Speechmatics;
+the Pi only supplies a 60-second temporary credential, never the Speechmatics API key.
+The global endpoint chooses the closest service region. Microphone capture requires
+HTTPS or localhost and AudioWorklet support. If the connection drops or upload stalls,
+switch to another provider and back to reconnect.
+
+Try two people taking turns, short replies, and a person speaking off-camera. Debug
+logs show the voice label and face selected for finalized text; `lag` measures final
+transcript arrival, not first partial visibility. Voice-to-face learning uses final
+results only and resets for a new transcription session. Unknown Speechmatics labels
+(`UU`) are not learned as a person. Learned voice labels survive brief lip-score conflicts;
+sustained clear lips can correct them. No live accuracy or latency benchmark is implied by this integration.
+
+References: [models](https://docs.speechmatics.com/speech-to-text/models),
+[latency](https://docs.speechmatics.com/speech-to-text/realtime/output),
+[diarization](https://docs.speechmatics.com/speech-to-text/realtime/realtime-diarization).
+
+### Provider interface
 
 Everything speech-to-text lives in `web/stt/`. Each provider is one file that turns mic audio into one
 normalised event (see the top of `web/stt/provider.js`). To add one: copy `deepgram.js`, import it in
