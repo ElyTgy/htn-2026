@@ -79,9 +79,15 @@ Copy `.env.example` to `.env` and paste a key from <https://console.deepgram.com
    instead, `http://<pi-hostname>.local:8080/` (run `hostname` on the Pi; if another device already
    claimed the name it becomes `<name>-2`), or its global IPv6 address in brackets,
    `http://[2605:...]:8080/` (from `hostname -I`). Wherever this README says `<pi-ip>`, use that.
-2. **Mic permission.** Chrome only allows the mic on `https://` or `localhost`. Pick one:
-   - Open `chrome://flags`, search "Insecure origins treated as secure", add `http://<pi-ip>:8080`, enable, relaunch; or
-   - On the Pi run `scripts/make_cert.sh`, start with `--https`, open `https://<pi-ip>:8080/` and accept the warning once.
+2. **Mic permission.** Browsers only allow the mic on `https://` or `localhost`, so over plain
+   `http://<pi>:8080` the page says it cannot use the microphone. Pick one:
+   - **HTTPS (recommended).** On the Pi run `sh scripts/make_cert.sh` once and restart the server. It then
+     also serves `https://<pi-hostname>.local:8443/`. Open that, and accept the browser's certificate
+     warning once (Advanced → Proceed). Works in any browser, nothing to configure per device.
+   - **Chrome flag.** Open `chrome://flags`, search "Insecure origins treated as secure", add the exact
+     origin you type in the address bar, e.g. `http://caption-pi-2.local:8080` (no trailing slash or
+     path), set the dropdown to Enabled, and relaunch Chrome. It must be done in the browser on the
+     device that opens the page.
 3. Open the page, tap **Start captions**, allow the mic.
 4. Put the glasses in head-locked ("follow") mode so the screen stays fixed to your view.
 

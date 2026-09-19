@@ -32,5 +32,6 @@ class Config:
     # IPv6-only for laptops and Android devices, so an IPv4-only server would be unreachable.
     host: str | None = None
     port: int = 8080
+    https_port: int = 8443         # only used when certs/ exists
     send_hz: float = 15.0          # max frame messages per second to the page
     default_stt: str = "deepgram"

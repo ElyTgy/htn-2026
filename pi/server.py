@@ -9,6 +9,7 @@
 import asyncio
 import json
 import os
+import socket
 import ssl
 import threading
 
@@ -131,14 +132,18 @@ class CaptionServer:
         return resp
 
     def start_in_thread(self, https: bool):
-        """Run the web server on its own thread and event loop; returns once it is listening."""
+        """Run the web server on its own thread and event loop; returns once it is listening.
+
+        Plain http is always served on cfg.port. If certs/ exists (scripts/make_cert.sh), https is
+        served as well on cfg.https_port: browsers only allow the microphone on https or localhost.
+        """
+        cert, key = CERT_DIR / "cert.pem", CERT_DIR / "key.pem"
         ssl_ctx = None
-        if https:
-            cert, key = CERT_DIR / "cert.pem", CERT_DIR / "key.pem"
-            if not cert.exists():
-                raise SystemExit("no certificate found; run scripts/make_cert.sh first")
+        if cert.exists() and key.exists():
             ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ssl_ctx.load_cert_chain(cert, key)
+        elif https:
+            raise SystemExit("no certificate found; run scripts/make_cert.sh first")
 
         ready = threading.Event()
         failure = []
@@ -147,7 +152,9 @@ class CaptionServer:
             runner = web.AppRunner(self.app)
             await runner.setup()
             try:
-                await web.TCPSite(runner, self.cfg.host, self.cfg.port, ssl_context=ssl_ctx).start()
+                await web.TCPSite(runner, self.cfg.host, self.cfg.port).start()
+                if ssl_ctx:
+                    await web.TCPSite(runner, self.cfg.host, self.cfg.https_port, ssl_context=ssl_ctx).start()
             except OSError as e:
                 failure.append(e)
                 ready.set()
@@ -158,9 +165,14 @@ class CaptionServer:
         threading.Thread(target=lambda: asyncio.run(serve()), daemon=True).start()
         ready.wait()
         if failure:
-            raise SystemExit(f"could not start the web server on port {self.cfg.port}: {failure[0]}")
-        scheme = "https" if https else "http"
-        print(f"caption page: {scheme}://localhost:{self.cfg.port}/  (from other devices use this machine's IP)")
+            raise SystemExit(f"could not start the web server: {failure[0]}")
+        name = socket.gethostname().removesuffix(".local")
+        print(f"caption page (this machine): http://localhost:{self.cfg.port}/")
+        if ssl_ctx:
+            print(f"caption page (other devices, mic works): https://{name}.local:{self.cfg.https_port}/")
+        else:
+            print(f"caption page (other devices): http://{name}.local:{self.cfg.port}/  "
+                  "(no mic there until you run scripts/make_cert.sh and restart)")
 
 
 # ---- transcription provider credentials -------------------------------------------------
