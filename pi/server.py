@@ -3,6 +3,7 @@
   /                 the page (web/)
   /ws               WebSocket: one JSON "frame" message per processed camera frame (rate limited)
   /config           small JSON blob the page reads at startup
+  /settings         POST {"rotate": 90}: change a camera setting while running (saved to settings.json)
   /stt-token        short-lived credential for the chosen transcription provider (keys stay in .env)
   /video            MJPEG debug feed of what the camera sees
 """
@@ -40,6 +41,7 @@ class CaptionServer:
             web.get("/", self.index),
             web.get("/ws", self.ws),
             web.get("/config", self.config),
+            web.post("/settings", self.settings),
             web.get("/stt-token", self.stt_token),
             web.get("/video", self.video),
             web.post("/log", self.log),
@@ -89,8 +91,17 @@ class CaptionServer:
             "backend": self.backend_name,
             "defaultStt": self.cfg.default_stt,
             "hasVideo": self.backend.latest_frame() is not None or self.backend_name != "fake",
-            "aspect": self.cfg.width / self.cfg.height,
+            "aspect": self.cfg.frame_size[0] / self.cfg.frame_size[1],
+            "settings": self.cfg.page_settings(),
         })
+
+    async def settings(self, request):
+        try:
+            self.cfg.apply_settings(await request.json())
+        except (ValueError, OSError) as e:
+            return web.json_response({"error": str(e)}, status=400)
+        print(f"\n[settings] {self.cfg.page_settings()}")
+        return web.json_response(self.cfg.page_settings())
 
     async def stt_token(self, request):
         provider = request.query.get("provider", self.cfg.default_stt)

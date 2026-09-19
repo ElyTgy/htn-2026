@@ -309,6 +309,23 @@ async function init() {
     const typing = e.target instanceof Element && e.target.closest('input, select, textarea');
     if (e.key && e.key.toLowerCase() === 'b' && !typing) setDebug(!state.debug);
   });
+  // Rotation happens on the Pi (faces must be upright for detection), so it lives in the
+  // server's settings rather than localStorage and applies to every page that connects.
+  const rotateToggle = $('rotate-toggle');
+  rotateToggle.checked = (config.settings && config.settings.rotate) === 90;
+  rotateToggle.addEventListener('change', async () => {
+    rotateToggle.disabled = true;
+    try {
+      const r = await fetch('/settings', { method: 'POST', body: JSON.stringify({ rotate: rotateToggle.checked ? 90 : 0 }) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      rotateToggle.checked = (await r.json()).rotate === 90;
+    } catch (e) {
+      rotateToggle.checked = !rotateToggle.checked;
+      report(`rotate setting failed: ${e.message}`);
+    } finally {
+      rotateToggle.disabled = false;
+    }
+  });
   sttSel.addEventListener('change', () => { store.set('stt', sttSel.value); if (state.provider) startStt().catch(showSttError); });
   $('mic-select').addEventListener('change', (e) => { store.set('mic', e.target.value); if (state.provider) startStt().catch(showSttError); });
 }

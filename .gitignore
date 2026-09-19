@@ -3,3 +3,4 @@
 certs/
 models/
 __pycache__/
+settings.json

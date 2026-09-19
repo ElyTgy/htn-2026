@@ -91,6 +91,7 @@ def main():
 
     load_dotenv(ROOT / ".env")
     cfg = Config(width=args.width, height=args.height, port=args.port)
+    cfg.load_settings()
     backend = make_backend(args.backend, args.source, args.source_arg, cfg)
     server = CaptionServer(cfg, backend, args.backend)
 

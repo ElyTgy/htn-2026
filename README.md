@@ -65,6 +65,8 @@ rpicam-hello -t 2000                              # check the camera works
 
 The terminal shows frames per second; aim for 15 or more. If it's low, try `--width 960 --height 540`.
 The face model downloads itself on first run (needs internet once).
+If the camera is mounted sideways, tick "Camera is sideways" in the page's Settings; the Pi
+remembers it in `settings.json`. Check the result at `http://<pi>:8080/video`.
 
 ## 3. Deepgram key
 
