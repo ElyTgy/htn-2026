@@ -22,6 +22,12 @@ class Picamera2Source:
             buffer_count=2,
         )
         self._cam.configure(config)
+        if "AfMode" in self._cam.camera_controls:
+            # Camera Module 3 has a focus motor and starts in manual focus, which leaves faces
+            # blurry. Continuous autofocus keeps people sharp as they move. (v1/v2 are fixed-focus.)
+            from libcamera import controls
+            self._cam.set_controls({"AfMode": controls.AfModeEnum.Continuous,
+                                    "AfSpeed": controls.AfSpeedEnum.Fast})
         self._cam.start()
 
     def read(self):
