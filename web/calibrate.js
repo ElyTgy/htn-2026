@@ -12,7 +12,8 @@ const STEP_SCALE = 0.03;
 
 export class Calibration {
   constructor({ forceIdentity = false } = {}) {
-    this.forceIdentity = forceIdentity; // ?video=1: the camera image fills the screen, so no mapping
+    this.forceIdentity = forceIdentity; // live camera fills the screen, so no optical mapping
+    this.videoAspect = 16 / 9;
     this.c = { ...IDENTITY };
     try { Object.assign(this.c, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch {}
     this.onChange = () => {};
@@ -20,6 +21,10 @@ export class Calibration {
 
   // → [xPx, yPx]
   map(x, y) {
+    if (this.forceIdentity) {
+      const [left, top, width, height] = this._videoRect();
+      return [left + x * width, top + y * height];
+    }
     const c = this.forceIdentity ? IDENTITY : this.c;
     if (c.mirror) x = 1 - x;
     return [
@@ -30,8 +35,22 @@ export class Calibration {
 
   // Sizes scale but don't shift.
   mapSize(w, h) {
+    if (this.forceIdentity) {
+      const [, , width, height] = this._videoRect();
+      return [w * width, h * height];
+    }
     const c = this.forceIdentity ? IDENTITY : this.c;
     return [c.sx * w * innerWidth, c.sy * h * innerHeight];
+  }
+
+  _videoRect() {
+    const viewportAspect = innerWidth / innerHeight;
+    if (viewportAspect > this.videoAspect) {
+      const width = innerHeight * this.videoAspect;
+      return [(innerWidth - width) / 2, 0, width, innerHeight];
+    }
+    const height = innerWidth / this.videoAspect;
+    return [0, (innerHeight - height) / 2, innerWidth, height];
   }
 
   set(patch) {
@@ -54,7 +73,7 @@ export class Calibration {
   readout() {
     const c = this.c;
     const line = `scale ${c.sx.toFixed(2)} × ${c.sy.toFixed(2)}   offset ${c.ox.toFixed(2)}, ${c.oy.toFixed(2)}`;
-    return this.forceIdentity ? `${line}\n(ignored while ?video=1)` : line;
+    return this.forceIdentity ? `${line}\n(ignored while debug camera feed is on)` : line;
   }
 }
 

@@ -64,11 +64,11 @@ class Config:
     identity_merge_window: float = 3.0  # how long a brand-new person may still be merged into a known one
 
     # Active speaker (mouth_open = inner-lip gap / face height)
-    speak_window: float = 0.6      # seconds of mouth history used for the score
-    speak_std_full: float = 0.02   # std of mouth_open that maps to score 1.0
-    speak_on: float = 0.35         # score needed to switch to "speaking"
-    speak_off: float = 0.20        # score below which "speaking" may switch off
-    speak_hold: float = 0.4        # seconds to keep "speaking" after the score drops
+    speak_window: float = 0.25     # react to turn changes instead of averaging them away
+    speak_std_full: float = 0.012  # normal conversational lip motion maps strongly into the score
+    speak_on: float = 0.12         # switch on with modest, real mouth movement
+    speak_off: float = 0.06        # resist flicker without suppressing quiet speakers
+    speak_hold: float = 0.18       # bridge syllable gaps, then release quickly at handoff
 
     # Server
     # None = listen on every interface over both IPv4 and IPv6. Phone hotspots are often
@@ -76,5 +76,4 @@ class Config:
     host: str | None = None
     port: int = 8080
     https_port: int = 8443         # only used when certs/ exists
-    send_hz: float = 15.0          # max frame messages per second to the page
-    default_stt: str = "deepgram"
+    default_stt: str = "speechmatics"

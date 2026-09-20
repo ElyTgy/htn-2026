@@ -10,7 +10,7 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-#video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: fill; opacity: 0.55; }
+#video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0.55; }
 #stage { position: fixed; inset: 0; }
 
 .caption {
@@ -37,18 +37,6 @@ html, body {
 }
 .facebox.speaking { border-color: #6f6; color: #6f6; border-width: 3px; }
 
-#bar {
-  position: fixed; left: 50%; bottom: 4vh; transform: translateX(-50%);
-  width: min(640px, 80vw);
-  font-size: calc(var(--caption-size) * 0.8); font-weight: 600; line-height: 1.35;
-  color: #ddd; text-align: left;
-  height: calc(var(--caption-size) * 0.8 * 1.35 * 2 + 16px);
-  padding: 8px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.72);
-  overflow: hidden;
-  transition: opacity 0.25s;
-}
-#bar.hidden, #bar.empty { opacity: 0; }
-
 #hud {
   position: fixed; right: 8px; top: 8px;
   font: 12px ui-monospace, monospace; color: #9f9; white-space: pre; text-align: right;
@@ -69,21 +57,25 @@ button, select {
 #start-btn { font-size: 20px; padding: 14px 28px; background: #0a5; border-color: #0c6; justify-self: center; }
 button:disabled { opacity: 0.4; }
 
-#settings-hotspot {
-  position: fixed; left: 0; top: 0; width: 64px; height: 64px;
-  background: transparent; border: none; padding: 0;
-}
 /* Kept dim on purpose: anything bright is visible in the glasses all the time. */
-#boxes-btn {
+#control-dock {
   position: fixed; left: 8px; bottom: 8px;
-  font-size: 13px; padding: 8px 12px;
+  display: grid; grid-template-columns: 42px 42px;
+  border: 1px solid #333; border-radius: 9px; overflow: hidden;
+  background: #000;
+}
+#control-dock button {
+  width: 42px; height: 36px; padding: 0; border: 0; border-radius: 0;
+  font-size: 13px;
   color: #777; background: #000; border: 1px solid #333;
 }
+#control-dock button + button { border-left: 1px solid #333; }
 #boxes-btn[aria-pressed="true"] { color: #3cf; border-color: #3cf; }
+#menu-btn[aria-expanded="true"] { color: #fff; background: #222; }
 
 #settings {
-  position: fixed; left: 8px; top: 8px; width: min(340px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px); overflow: auto;
+  position: fixed; left: 8px; bottom: 52px; width: min(340px, calc(100vw - 16px));
+  max-height: calc(100vh - 60px); overflow: auto;
   background: #111; border: 1px solid #444; border-radius: 12px; padding: 14px;
   display: grid; gap: 10px; font-size: 14px;
 }

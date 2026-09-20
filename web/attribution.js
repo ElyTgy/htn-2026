@@ -7,19 +7,17 @@
 // A learned voice wins brief ambiguous handoffs; sustained clear lips can correct it.
 // No DOM in here, so it runs under Node for tests.
 
-export const NONE = 'none'; // pseudo-face: "nobody on camera was talking" (the wearer, or someone off-screen)
-
 const DEFAULTS = {
   historyMs: 12000,
-  visionLatencyMs: 250,  // camera → page delay plus the lag of the rolling speaking score
-  confident: 0.40,       // mean speaking score for a clear lip result...
-  margin: 0.15,          // ...and its lead over the runner-up
+  visionLatencyMs: 50,   // GPU pipeline plus the shortened rolling score
+  confident: 0.12,
+  margin: 0.02,
   nearestMs: 100,       // never borrow a distant frame for missing audio history
-  minLearnMs: 250,      // a short reply isn't enough evidence to bind a voice to a face
-  overrideMs: 600,      // require sustained evidence to contradict a known voice
-  silent: 0.12,          // everyone below this = nobody on camera is talking
-  bindVotes: 3,          // votes needed before a voice label is trusted
-  bindRatio: 2,          // and its lead over the label's second choice
+  minLearnMs: 120,
+  overrideMs: 250,
+  silent: 0.03,
+  bindVotes: 2,
+  bindRatio: 1.4,
   voteDecay: 0.9,        // applied to a label's other choices on each new vote
 };
 
@@ -27,7 +25,7 @@ export class Attributor {
   constructor(opts = {}) {
     this.o = { ...DEFAULTS, ...opts };
     this.frames = [];        // [{ t, scores: Map(faceId → score) }]
-    this.votes = new Map();  // label → Map(faceId | NONE → weight)
+    this.votes = new Map();  // label → Map(faceId → weight)
     this.learnedUntil = new Map(); // don't count the same finalized audio twice
   }
 
@@ -77,7 +75,7 @@ export class Attributor {
     v.set(faceId, (v.get(faceId) || 0) + 1);
   }
 
-  // → { faceId: id | null, how: 'lips' | 'voice' | 'none' }   (null = show in the bottom bar)
+  // Null means no face is visible; the caller drops that text. There is no global caption.
   attribute(startMs, endMs, label, learn = true) {
     const ranked = this.lipEvidence(startMs, endMs);
     const best = ranked[0], second = ranked[1];
@@ -98,32 +96,28 @@ export class Attributor {
       best.score >= 0.65 && best.score - (second?.score || 0) >= 0.3 &&
       (ranked.find(f => f.id === bound)?.score || 0) < this.o.silent;
     if (bound !== null && (!clear || best.id !== bound) && !sustainedCorrection) {
-      return { faceId: bound !== NONE && this.visibleIds().has(bound) ? bound : null, how: 'voice' };
-    }
-
-    // A newly detected voice often arrives while the previous person's mouth score
-    // is still decaying. Don't immediately assign both voices to that same face.
-    if (bound === null && hasLabel && clear && duration < this.o.overrideMs &&
-        [...this.votes.keys()].some(other => other !== label && this.boundFace(other) === best.id)) {
-      return { faceId: null, how: 'none' };
+      return { faceId: this.visibleIds().has(bound) ? bound : null, how: 'voice' };
     }
 
     if (clear) {
       vote(best.id);
       return { faceId: best.id, how: 'lips' };
     }
-    // Missing history is not evidence of an off-camera speaker.
-    if (best && best.score < this.o.silent && bound === null) vote(NONE);
-
     if (hasLabel) {
       const bound = this.boundFace(label);
-      if (bound === NONE) return { faceId: null, how: 'voice' };
       if (bound !== null) {
         // Known voice. If their face is in view, caption it; if not, they're off-screen.
         return this.visibleIds().has(bound) ? { faceId: bound, how: 'voice' } : { faceId: null, how: 'voice' };
       }
     }
-    return { faceId: null, how: 'none' };
+    // Never divert heard speech to a global subtitle when a face is visible. Weak lip
+    // evidence is still more useful attached to the best candidate; finalized words and
+    // learned voice labels can correct the provisional placement.
+    if (best) {
+      vote(best.id);
+      return { faceId: best.id, how: 'best-visible' };
+    }
+    return { faceId: null, how: 'offscreen' };
   }
 
   // Split one transcript event into stretches by a single voice. Without word data it's one stretch.

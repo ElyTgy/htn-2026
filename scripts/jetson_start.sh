@@ -52,8 +52,9 @@ case "$CAMERA" in
     fi
     ;;
   usb) set -- --backend mediapipe --source opencv --source-arg "$CAMERA_INDEX" ;;
+  oak) set -- --backend mediapipe --source oak --width 512 --height 384 ;;
   fake) set -- --backend fake ;;
-  *) echo "camera must be csi, usb, or fake"; exit 2 ;;
+  *) echo "camera must be oak, csi, usb, or fake"; exit 2 ;;
 esac
 
 nohup .venv/bin/python -u pi/main.py "$@" > server.log 2>&1 < /dev/null &

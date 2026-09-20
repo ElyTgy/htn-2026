@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.."
 
 CAMERA=${1:-csi}
 case "$CAMERA" in
-  csi|usb) ;;
-  *) echo "usage: sh scripts/jetson_video_mic_test.sh [csi|usb]"; exit 2 ;;
+  oak|csi|usb) ;;
+  *) echo "usage: sh scripts/jetson_video_mic_test.sh [oak|csi|usb]"; exit 2 ;;
 esac
 
 if [ ! -x .venv/bin/python ]; then

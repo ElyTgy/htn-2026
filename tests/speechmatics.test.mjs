@@ -90,12 +90,14 @@ test('provider waits for recognition, sends PCM, and cleans up on disconnect', a
     onTranscript: e => events.push(e), onStatus: s => statuses.push(s), onSessionStart: () => sessions++,
   });
   t.after(() => provider.stop());
-  const starting = provider.start({});
+  const liveStream = { getAudioTracks: () => [{ readyState: 'live' }] };
+  const starting = provider.start(liveStream);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(node, undefined);
   socket.onopen();
   const config = JSON.parse(socket.sent[0]);
-  assert.equal(config.transcription_config.model, 'enhanced');
+  assert.equal(config.transcription_config.operating_point, 'enhanced');
+  assert.equal('model' in config.transcription_config, false);
   assert.equal(config.transcription_config.diarization, 'speaker');
   assert.equal(config.audio_format.sample_rate, 48000);
   socket.onmessage({ data: JSON.stringify({ message: 'RecognitionStarted' }) });
@@ -116,6 +118,6 @@ test('provider waits for recognition, sends PCM, and cleans up on disconnect', a
     ok: false, json: async () => ({ error: 'SPEECHMATICS_API_KEY is not set' }),
   }));
   const failing = createProvider('speechmatics', { onTranscript() {}, onStatus() {} });
-  await assert.rejects(failing.start({}), /SPEECHMATICS_API_KEY/);
+  await assert.rejects(failing.start(liveStream), /SPEECHMATICS_API_KEY/);
   assert.ok(closed);
 });

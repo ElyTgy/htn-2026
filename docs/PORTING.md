@@ -14,6 +14,7 @@ The implemented Jetson build includes:
 
 - `pi/sources/jetson_csi_source.py`: bounded-latency Argus/GStreamer CSI capture with sensor-id 0/1 probing;
 - the existing OpenCV source for a UVC USB camera;
+- `pi/sources/oak_source.py`: OAK RGB capture through DepthAI 2 or 3, with MediaPipe on the Jetson;
 - `scripts/jetson_*`: inventory, installation, launch, and boot services;
 - `firmware/sound_sensors`: the two-analog-sensor Arduino firmware; and
 - `jetson/hardware_bridge.py`: calibration, coarse left/right decisions, and TITAN L/R/M commands.
@@ -24,18 +25,13 @@ the Jetson host also needs an explicit sound/haptic transport.
 
 ## OAK-1 as a plain camera
 
-This remains a future option. Keep MediaPipe on the host and implement `FrameSource` with DepthAI:
+This path is implemented in `pi/sources/oak_source.py`. It keeps MediaPipe on the host and uses
+DepthAI only to stream RGB frames:
 
-1. Install `depthai` and its udev rule.
-2. Build a colour-camera preview pipeline at 1280x720.
-3. Return `(rgb_frame, time.monotonic())` from `read()`.
-4. Register `--source oak` in `pi/sources/__init__.py`.
-
-## OAK-1 doing vision on-camera
-
-`pi/backends/oak_backend.py` is an untested skeleton. It needs a face detector, per-face crops, a
-landmark model with inner-lip points, and a conversion to the shared `Detection` shape. Keep
-`mouth_open` as inner-lip gap divided by face height or retune the thresholds in `pi/config.py`.
+1. `scripts/jetson_install.sh` installs `depthai` and the Movidius udev rule.
+2. `sh scripts/jetson_start.sh --camera oak --no-haptics` starts the vision server.
+3. The source requests 640x360 BGR frames at 60 fps, converts them to RGB, and retains exactly the
+   newest frame while the Jetson GPU runs face landmarks.
 
 ## On-device speech-to-text
 

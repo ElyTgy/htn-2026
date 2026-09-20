@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../web/stt/mic-test.js';
-import { createProvider } from '../web/stt/provider.js';
+import { createProvider, registerProvider } from '../web/stt/provider.js';
+
+test('provider registry permanently rejects sources that are not backed by a live mic', () => {
+  registerProvider('forbidden-script', 'Forbidden', () => ({ needsMic: false, async start() {}, stop() {} }));
+  assert.throws(
+    () => createProvider('forbidden-script', { onTranscript() {}, onStatus() {} }),
+    /not live-microphone-backed/,
+  );
+});
 
 test('mic-test requires a live microphone and never transcribes or uploads it', async () => {
   const statuses = [];

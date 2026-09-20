@@ -1,13 +1,13 @@
 // Transcription providers are interchangeable. To try a different API:
-//   1. add web/stt/<name>.js that calls registerProvider() (copy deepgram.js or mock.js)
+//   1. add web/stt/<name>.js that calls registerProvider() (see speechmatics.js)
 //   2. import it in web/app.js
 //   3. if it needs a secret, add a token handler in pi/server.py (TOKEN_HANDLERS)
 // then pick it in Settings or with ?stt=<name>.
 //
 // A provider is created with { onTranscript, onStatus } and must implement:
 // Optional callback onSessionStart() resets learned voice labels on each new audio session.
-//   needsMic            boolean; false for providers that don't use the microphone
-//   async start(stream) begin transcribing the given MediaStream (null if !needsMic)
+//   needsMic            must be true; non-microphone/scripted providers are rejected
+//   async start(stream) begin transcribing the verified-live MediaStream
 //   stop()              stop and release everything
 //
 // It reports text by calling onTranscript(event) with ONE normalised shape:
@@ -36,7 +36,11 @@ export function listProviders() {
 export function createProvider(name, callbacks) {
   const entry = registry.get(name);
   if (!entry) throw new Error(`unknown transcription provider "${name}"`);
-  return entry.factory(callbacks);
+  const provider = entry.factory(callbacks);
+  if (provider.needsMic !== true) {
+    throw new Error(`transcription provider "${name}" is not live-microphone-backed`);
+  }
+  return provider;
 }
 
 // Shared helper for providers that fetch credentials from the Pi.

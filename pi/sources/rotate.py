@@ -27,3 +27,15 @@ class RotatedSource:
 
     def stop(self):
         self.inner.stop()
+
+    def latest_frame(self):
+        latest = getattr(self.inner, "latest_frame", None)
+        frame = latest() if latest else None
+        k = (self.cfg.rotate // 90) % 4
+        if frame is None or k == 0:
+            return frame
+        return np.ascontiguousarray(np.rot90(frame, k))
+
+    @property
+    def capture_fps(self):
+        return getattr(self.inner, "capture_fps", 0.0)

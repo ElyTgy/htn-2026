@@ -1,4 +1,5 @@
 """Faces and mouth opening from MediaPipe Face Landmarker, fed by any FrameSource."""
+from pathlib import Path
 import urllib.request
 
 import mediapipe as mp
@@ -19,6 +20,7 @@ LIP_UPPER_INNER = 13
 LIP_LOWER_INNER = 14
 FOREHEAD = 10
 CHIN = 152
+JETSON_MODEL_PATH = Path("/proc/device-tree/model")
 
 
 def ensure_model():
@@ -27,6 +29,19 @@ def ensure_model():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     print(f"downloading face landmark model to {MODEL_PATH} ...")
     urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+
+
+def _delegate():
+    """Use the GLES delegate on Jetson; keep the portable CPU wheel elsewhere."""
+    try:
+        is_jetson = b"jetson" in JETSON_MODEL_PATH.read_bytes().lower()
+    except OSError:
+        is_jetson = False
+    return (
+        mp_python.BaseOptions.Delegate.GPU
+        if is_jetson
+        else mp_python.BaseOptions.Delegate.CPU
+    )
 
 
 class MediaPipeBackend:
@@ -40,11 +55,12 @@ class MediaPipeBackend:
 
     def start(self):
         ensure_model()
+        delegate = _delegate()
+        print(f"MediaPipe Face Landmarker delegate: {delegate.name}")
         options = vision.FaceLandmarkerOptions(
             base_options=mp_python.BaseOptions(
                 model_asset_path=str(MODEL_PATH),
-                # Explicit CPU: leaving it unset crashes on some builds ("Service is unavailable").
-                delegate=mp_python.BaseOptions.Delegate.CPU,
+                delegate=delegate,
             ),
             running_mode=vision.RunningMode.VIDEO,
             num_faces=self.cfg.max_faces,
@@ -92,7 +108,12 @@ class MediaPipeBackend:
         return ts, detections
 
     def latest_frame(self):
-        return self._frame
+        latest = getattr(self.source, "latest_frame", None)
+        return latest() if latest else self._frame
+
+    @property
+    def capture_fps(self):
+        return getattr(self.source, "capture_fps", 0.0)
 
     def stop(self):
         self.source.stop()

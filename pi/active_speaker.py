@@ -27,7 +27,8 @@ class ActiveSpeakerDetector:
         while st.history and ts - st.history[0][0] > self.cfg.speak_window:
             st.history.popleft()
 
-        if len(st.history) >= 4:
+        # At 60 fps, two frames provide evidence in about 17 ms.
+        if len(st.history) >= 2:
             spread = pstdev(m for _, m in st.history)
             st.score = min(spread / self.cfg.speak_std_full, 1.0)
         else:

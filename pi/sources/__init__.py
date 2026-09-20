@@ -11,6 +11,9 @@ def make_source(name: str, arg: str, cfg) -> FrameSource:
     elif name == "jetson-csi":
         from .jetson_csi_source import JetsonCsiSource
         source = JetsonCsiSource(arg, cfg)
+    elif name == "oak":
+        from .oak_source import OakSource
+        source = OakSource(cfg)
     else:
         raise ValueError(f"unknown source: {name}")
     from .rotate import RotatedSource

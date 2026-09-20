@@ -1,7 +1,7 @@
 import { registerProvider, fetchToken } from './provider.js';
 
 export const TRANSCRIPTION_CONFIG = {
-  language: 'en', model: 'enhanced', diarization: 'speaker',
+  language: 'en', operating_point: 'enhanced', diarization: 'speaker',
   enable_partials: true, max_delay: 0.7, max_delay_mode: 'fixed',
 };
 
@@ -51,6 +51,8 @@ function create({ onTranscript, onStatus, onSessionStart = () => {} }) {
   return {
     needsMic: true,
     async start(stream) {
+      const track = stream?.getAudioTracks?.()[0];
+      if (!track || track.readyState !== 'live') throw new Error('no live microphone track');
       stopped = false;
       t0 = null;
       try {

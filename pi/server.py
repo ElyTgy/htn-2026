@@ -34,7 +34,9 @@ class CaptionServer:
         self.cfg = cfg
         self.backend = backend
         self.backend_name = backend_name
-        self.clients: set[web.WebSocketResponse] = set()
+        # One single-slot queue per page: slow Wi-Fi clients receive the newest face frame, never a
+        # multi-second backlog of obsolete positions.
+        self.clients: dict[web.WebSocketResponse, asyncio.Queue[str]] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
         self.app = web.Application(middlewares=[no_cache])
         self.app.add_routes([
@@ -57,20 +59,26 @@ class CaptionServer:
         if self.loop is None or not self.clients:
             return
         data = json.dumps(message, separators=(",", ":"))
-        self.loop.call_soon_threadsafe(self._broadcast, data)
+        self.loop.call_soon_threadsafe(self._offer_latest, data)
 
-    def _broadcast(self, data: str):
-        for ws in list(self.clients):
+    def _offer_latest(self, data: str):
+        for ws, queue in list(self.clients.items()):
             if ws.closed:
-                self.clients.discard(ws)
-            else:
-                asyncio.ensure_future(self._send(ws, data))
+                self.clients.pop(ws, None)
+                continue
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            queue.put_nowait(data)
 
-    async def _send(self, ws, data):
+    async def _send_latest(self, ws, queue):
         try:
-            await ws.send_str(data)
-        except (ConnectionError, RuntimeError):
-            self.clients.discard(ws)
+            while True:
+                await ws.send_str(await queue.get())
+        except (ConnectionError, RuntimeError, asyncio.CancelledError):
+            pass
 
     async def index(self, request):
         return web.FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
@@ -78,12 +86,16 @@ class CaptionServer:
     async def ws(self, request):
         ws = web.WebSocketResponse(heartbeat=10)
         await ws.prepare(request)
-        self.clients.add(ws)
+        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=1)
+        self.clients[ws] = queue
+        sender = asyncio.create_task(self._send_latest(ws, queue))
         try:
             async for _ in ws:
                 pass
         finally:
-            self.clients.discard(ws)
+            self.clients.pop(ws, None)
+            sender.cancel()
+            await asyncio.gather(sender, return_exceptions=True)
         return ws
 
     async def config(self, request):
@@ -137,7 +149,7 @@ class CaptionServer:
                                            [cv2.IMWRITE_JPEG_QUALITY, 70])
                     if ok:
                         await resp.write(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg.tobytes() + b"\r\n")
-                await asyncio.sleep(1 / 15)
+                await asyncio.sleep(1 / 60)
         except (ConnectionError, asyncio.CancelledError):
             pass
         return resp
@@ -194,31 +206,6 @@ class TokenError(Exception):
     pass
 
 
-async def deepgram_token(query):
-    load_dotenv(ROOT / ".env", override=True)  # re-read so a key added while running is picked up
-    key = os.environ.get("DEEPGRAM_API_KEY", "").strip()
-    if not key:
-        raise TokenError("DEEPGRAM_API_KEY is not set (copy .env.example to .env and fill it in)")
-    if query.get("scheme") == "token":  # the page asks for this if a short-lived token was refused
-        print("warning: sending the Deepgram API key to the page (short-lived token was refused)")
-        return {"scheme": "token", "credential": key}
-    # Prefer a 30-second token so the real key never reaches the browser.
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as s:
-            async with s.post("https://api.deepgram.com/v1/auth/grant",
-                              headers={"Authorization": f"Token {key}"}) as r:
-                if r.status == 200:
-                    body = await r.json()
-                    return {"scheme": "bearer", "credential": body["access_token"]}
-                detail = await r.text()
-    except aiohttp.ClientError as e:
-        raise TokenError(f"could not reach Deepgram: {e}")
-    # Keys without Member permission can't mint tokens. Fall back to the key itself:
-    # fine on a private hotspot for a demo, not for anything public.
-    print(f"warning: Deepgram token grant failed ({detail[:120]}); sending the API key to the page instead")
-    return {"scheme": "token", "credential": key}
-
-
 async def speechmatics_token(query):
     load_dotenv(ROOT / ".env", override=True)
     key = os.environ.get("SPEECHMATICS_API_KEY", "").strip()
@@ -242,6 +229,5 @@ async def speechmatics_token(query):
 
 
 TOKEN_HANDLERS = {
-    "deepgram": deepgram_token,
     "speechmatics": speechmatics_token,
 }

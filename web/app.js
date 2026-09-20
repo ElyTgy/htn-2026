@@ -3,9 +3,7 @@ import { CaptionBuffer, captionLines, smoothAnchor } from './captions.js';
 import { Calibration, bindCalibrationUi } from './calibrate.js';
 import { createProvider, listProviders } from './stt/provider.js';
 import { openMic, closeMic, listMics } from './stt/mic.js';
-import './stt/deepgram.js';
 import './stt/speechmatics.js';
-import './stt/mock.js';
 import './stt/mic-test.js';
 
 const params = new URLSearchParams(location.search);
@@ -15,23 +13,36 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
 
+// Older builds remembered the selected provider. That allowed the scripted mock provider to
+// survive a reload and look like a real conversation. Keep only non-audio display calibration;
+// microphone, provider and any unknown legacy state are deliberately session-only.
+function purgeLegacyClientState() {
+  try {
+    const keep = new Set(['caption-glasses-calibration', 'debug', 'camera-feed']);
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && !keep.has(key)) localStorage.removeItem(key);
+    }
+  } catch {}
+}
+purgeLegacyClientState();
+
 const COLOURS = ['#ffe14d', '#5ef0ff', '#7dff8a', '#ff9df0', '#ffb36b'];
-const CAPTION_HOLD_MS = 4000;   // caption fades this long after its last update
-const FINAL_KEEP_MS = 7000;     // finished sentences stay part of the caption this long
+const CAPTION_HOLD_MS = 2500;   // old words disappear quickly; this is a live aid, not a transcript
+const FINAL_KEEP_MS = 3500;
+const MAX_TRANSCRIPT_AGE_MS = 2000; // never display a result that arrived seconds after its audio
 const FACE_GONE_MS = 1000;
 const SMOOTH = 0.35;
 
-// Two ways to open the page:
-//   /                    glasses: black (= transparent) page, fullscreen, captions only
-//   /?video=1&debug=1    debugging on a normal screen: camera feed, face boxes, status text
+// Query parameters override the saved display mode. The normal first-run mode is the dark HUD.
 // ?debug=1 / ?debug=0 apply to this visit only; the Boxes button is what gets remembered.
-const showVideo = params.has('video') && params.get('video') !== '0';
+let showVideo = params.has('video') ? params.get('video') !== '0' : store.get('camera-feed') === '1';
 const debugParam = params.has('debug') ? params.get('debug') !== '0' : null;
 const state = {
   debug: debugParam ?? store.get('debug') === '1',
   faces: new Map(),      // id → { target:{x,y,w,h}, x,y,w,h (smoothed), score, speaking, seen, box }
-  captions: new Map(),   // face id | 'bar' → caption DOM and smoothed anchor
-  wsStatus: 'connecting', sttStatus: 'idle', fps: 0,
+  captions: new Map(),   // face id → caption DOM and smoothed anchor
+  wsStatus: 'connecting', sttStatus: 'idle', fps: 0, captureFps: 0, visionLatencyMs: 0,
   provider: null, mic: null,
 };
 // Send status, errors and attribution decisions to the server's terminal (see /log in pi/server.py).
@@ -57,6 +68,8 @@ function connectWs() {
     if (msg.type !== 'frame') return;
     const now = performance.now();
     state.fps = msg.fps;
+    state.captureFps = msg.captureFps || msg.fps;
+    state.visionLatencyMs = msg.latencyMs || 0;
     attributor.addFrame(now, msg.faces);
     for (const f of msg.faces) {
       let face = state.faces.get(f.id);
@@ -70,12 +83,10 @@ function connectWs() {
 function captionFor(key) {
   let c = state.captions.get(key);
   if (!c) {
-    const el = key === 'bar' ? $('bar') : document.createElement('div');
-    if (key !== 'bar') {
-      el.className = 'caption hidden';
-      el.style.color = COLOURS[(key - 1) % COLOURS.length];
-      $('stage').appendChild(el);
-    }
+    const el = document.createElement('div');
+    el.className = 'caption hidden';
+    el.style.color = COLOURS[(key - 1) % COLOURS.length];
+    $('stage').appendChild(el);
     el.innerHTML = '<span class="arrow"></span><span class="caption-text"></span>';
     state.captions.set(key, (c = { updated: 0, how: '', el, textEl: el.querySelector('.caption-text'), anchor: null }));
   }
@@ -84,6 +95,11 @@ function captionFor(key) {
 
 function onTranscript(event) {
   const now = performance.now();
+  const age = now - event.endMs;
+  if (!Number.isFinite(age) || age < -500 || age > MAX_TRANSCRIPT_AGE_MS) {
+    report(`discarded stale transcription event age=${Math.round(age)}ms`);
+    return;
+  }
   const runs = attributor.splitRuns(event).filter(run => run.text.trim()).map(run => {
     let decision = attributor.attribute(run.startMs, run.endMs, run.speaker, event.isFinal);
     // Keep a provisional stretch on the same face while its wording is revised.
@@ -96,15 +112,17 @@ function onTranscript(event) {
     const { faceId, how } = decision;
     if (event.isFinal) {
       const lips = attributor.lipEvidence(run.startMs, run.endMs).map((e) => `#${e.id}=${e.score.toFixed(2)}`).join(' ');
-      report(`"${run.text}" → ${faceId === null ? 'bar' : `face #${faceId}`} (${how}) voice=${run.speaker ?? '-'} lips[${lips}] lag=${Math.round(now - run.endMs)}ms`);
+      // Never write spoken words to server.log. The log contains only routing and latency metadata.
+      report(`caption final chars=${run.text.length} → ${faceId === null ? 'dropped (no visible face)' : `face #${faceId}`} (${how}) voice=${run.speaker ?? '-'} lips[${lips}] lag=${Math.round(now - run.endMs)}ms`);
     }
-    const c = captionFor(faceId ?? 'bar');
+    if (faceId === null) return null;
+    const c = captionFor(faceId);
     if (now - c.updated >= CAPTION_HOLD_MS) c.anchor = null;
     c.updated = now;
     c.how = how;
     return { ...run, faceId, how,
       words: event.words?.filter(w => w.startMs >= run.startMs && w.endMs <= run.endMs) };
-  });
+  }).filter(Boolean);
   captionBuffer.update(event, runs, now);
 }
 
@@ -127,11 +145,11 @@ function render() {
   }
 
   for (const [key, c] of state.captions) {
-    const face = key === 'bar' ? null : state.faces.get(key);
-    const live = now - c.updated < CAPTION_HOLD_MS && (key === 'bar' || face);
+    const face = state.faces.get(key);
+    const live = now - c.updated < CAPTION_HOLD_MS && face;
     c.el.classList.toggle('hidden', !live);
     if (!live) {
-      if (key !== 'bar' && !face && now - c.updated > FINAL_KEEP_MS) { c.el.remove(); state.captions.delete(key); }
+      if (!face && now - c.updated > FINAL_KEEP_MS) { c.el.remove(); state.captions.delete(key); }
       continue;
     }
     if (paintText) {
@@ -154,7 +172,8 @@ function render() {
 
   if (state.debug) {
     $('hud').textContent =
-      `pi ${state.wsStatus}  ${state.fps} fps  ${state.faces.size} face(s)\nstt ${state.sttStatus}\n` +
+      `camera ${state.captureFps} fps  vision ${state.fps} fps  ${state.visionLatencyMs} ms  ${state.faces.size} face(s)\n` +
+      `server ${state.wsStatus}  stt ${state.sttStatus}\n` +
       `mic ${'█'.repeat(Math.min(20, Math.round((state.micLevel || 0) * 100)))}\n` +
       [...attributor.votes].map(([l, v]) => `voice ${l} → ${attributor.boundFace(l) ?? '?'} ` +
         `[${[...v].map(([k, w]) => `${k}:${w.toFixed(1)}`).join(' ')}]`).join('\n');
@@ -209,6 +228,7 @@ function resetTranscript() {
 // Calls are queued so two quick triggers (Start + a settings change, say) can't interleave
 // and leave one provider recording from a microphone the other one just closed.
 let sttQueue = Promise.resolve();
+let sttGeneration = 0;
 function startStt() {
   sttQueue = sttQueue.catch(() => {}).then(startSttNow);
   return sttQueue;
@@ -217,11 +237,13 @@ function startStt() {
 async function startSttNow() {
   stopStt();
   resetTranscript();
+  const generation = ++sttGeneration;
   const name = $('stt-select').value;
   const provider = createProvider(name, {
-    onTranscript,
-    onSessionStart: resetTranscript,
+    onTranscript: (event) => { if (generation === sttGeneration) onTranscript(event); },
+    onSessionStart: () => { if (generation === sttGeneration) resetTranscript(); },
     onStatus: (s) => {
+      if (generation !== sttGeneration) return;
       if (state.sttStatus !== `${name}: ${s}`) report(`stt ${name}: ${s}`);
       state.sttStatus = `${name}: ${s}`;
     },
@@ -231,7 +253,6 @@ async function startSttNow() {
       state.mic = await openMic($('mic-select').value || store.get('mic') || undefined);
     } catch (e) {
       if (e.name !== 'OverconstrainedError') throw e;
-      store.set('mic', '');          // the remembered microphone is gone (unplugged); use the default
       state.mic = await openMic();
     }
     await refreshMics(); // labels become available once permission is granted
@@ -243,6 +264,7 @@ async function startSttNow() {
 }
 
 function stopStt() {
+  sttGeneration++;
   if (state.provider) state.provider.stop();
   state.provider = null;
   unwatchMic();
@@ -303,17 +325,17 @@ function unwatchMic() {
 
 async function refreshMics() {
   const sel = $('mic-select');
-  const current = state.mic ? state.mic.getAudioTracks()[0].getSettings().deviceId : store.get('mic');
+  const current = state.mic ? state.mic.getAudioTracks()[0].getSettings().deviceId : '';
   sel.innerHTML = '';
   for (const m of await listMics()) sel.add(new Option(m.label, m.id, false, m.id === current));
 }
 
 // ---- glasses view -----------------------------------------------------------------------------
 // The glasses mirror the whole phone screen, so the address bar and a portrait layout would
-// show up too. Must be called from a tap. Skipped with ?video=1 (debugging on a normal screen).
+// show up too. Must be called from a tap. Explicit debug pages stay windowed.
 function enterGlassesView() {
   const root = document.documentElement;
-  if (showVideo || document.fullscreenElement || !root.requestFullscreen) return;
+  if (debugParam === true || document.fullscreenElement || !root.requestFullscreen) return;
   root.requestFullscreen({ navigationUI: 'hide' })
     .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
     .catch((e) => report(`fullscreen/landscape refused: ${e.message}`));
@@ -334,14 +356,16 @@ function setStartStatus(extra) {
 }
 
 async function init() {
-  let config = { defaultStt: 'deepgram' };
+  let config = { defaultStt: 'speechmatics' };
   try { config = await (await fetch('/config')).json(); } catch {}
+  if (Number.isFinite(config.aspect) && config.aspect > 0) cal.videoAspect = config.aspect;
 
   const sttSel = $('stt-select');
-  const wanted = params.get('stt') || store.get('stt') || config.defaultStt;
-  for (const p of listProviders()) sttSel.add(new Option(p.label, p.name, false, p.name === wanted));
+  const providers = listProviders();
+  const requested = params.get('stt');
+  const wanted = providers.some((p) => p.name === requested) ? requested : config.defaultStt;
+  for (const p of providers) sttSel.add(new Option(p.label, p.name, false, p.name === wanted));
 
-  if (showVideo) { $('video').src = '/video'; $('video').hidden = false; }
   $('hud').hidden = !state.debug;
   $('debug-toggle').checked = state.debug;
   bindCalibrationUi(cal, $('settings'));
@@ -366,8 +390,12 @@ async function init() {
 
   // Fullscreen drops out on a back swipe or when the screen turns off; any tap brings it back.
   addEventListener('click', () => { if ($('start').hidden) enterGlassesView(); });
-  $('settings-hotspot').addEventListener('click', () => { $('settings').hidden = !$('settings').hidden; });
-  $('settings-close').addEventListener('click', () => { $('settings').hidden = true; });
+  const setMenu = (open) => {
+    $('settings').hidden = !open;
+    $('menu-btn').setAttribute('aria-expanded', String(open));
+  };
+  $('menu-btn').addEventListener('click', (e) => { e.stopPropagation(); setMenu($('settings').hidden); });
+  $('settings-close').addEventListener('click', () => setMenu(false));
   // Three ways to show/hide the face boxes (and status text), all kept in sync:
   // the corner button, the Settings checkbox, and the B key.
   const setDebug = (on, remember = true) => {
@@ -380,6 +408,19 @@ async function init() {
   setDebug(state.debug, false);
   $('debug-toggle').addEventListener('change', (e) => setDebug(e.target.checked));
   $('boxes-btn').addEventListener('click', () => setDebug(!state.debug));
+  const setVideo = (on, remember = true) => {
+    showVideo = on;
+    if (remember) store.set('camera-feed', on ? '1' : '0');
+    const video = $('video');
+    if (on && !video.src) video.src = '/video';
+    video.hidden = !on;
+    $('video-toggle').checked = on;
+    cal.forceIdentity = on;
+    cal.onChange();
+    reportView();
+  };
+  setVideo(showVideo, false);
+  $('video-toggle').addEventListener('change', (e) => setVideo(e.target.checked));
   addEventListener('keydown', (e) => {
     const typing = e.target instanceof Element && e.target.closest('input, select, textarea');
     if (e.key && e.key.toLowerCase() === 'b' && !typing) setDebug(!state.debug);
@@ -401,8 +442,8 @@ async function init() {
       rotateToggle.disabled = false;
     }
   });
-  sttSel.addEventListener('change', () => { store.set('stt', sttSel.value); if (state.provider) startStt().catch(showSttError); });
-  $('mic-select').addEventListener('change', (e) => { store.set('mic', e.target.value); if (state.provider) startStt().catch(showSttError); });
+  sttSel.addEventListener('change', () => { if (state.provider) startStt().catch(showSttError); });
+  $('mic-select').addEventListener('change', () => { if (state.provider) startStt().catch(showSttError); });
 }
 
 function showSttError(e) { state.sttStatus = `error: ${e.message}`; }

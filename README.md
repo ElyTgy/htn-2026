@@ -3,17 +3,17 @@
 Live captions floating above whoever is speaking, seen through XREAL One glasses.
 
 ```
-Pi 5 + Pi camera, or Jetson + CSI/USB camera       Beam Pro (Chrome, fullscreen black page)
-  camera → faces → who is moving their lips   ──►    mic → Deepgram → words with timestamps
+Pi 5 + Pi camera, or Jetson + OAK/CSI/USB camera   Beam Pro (Chrome, fullscreen live video)
+  camera → faces → who is moving their lips   ──►    mic → Speechmatics → timestamped words
   serves the page + streams face data (WebSocket)    matches words to the face that was talking
                                                      draws the caption above that face
                                                        ↓
-                                        XREAL One, head-locked mode (black = transparent)
+                                        XREAL One, head-locked video + overlays
 ```
 
 The camera decides **who** is speaking (lip movement, backed up by the transcription service's
 voice labels). The Beam Pro's browser does the **what** (speech to text). Speech with no matching
-face on camera (you, or someone out of view) goes to a bar at the bottom.
+face on camera is dropped rather than displayed as an unattributed global subtitle.
 
 Built at Hack the North 2026. Captions are the primary system. The Jetson build also includes the
 coarse two-sensor directional haptic path; it is intentionally separate from transcription audio.
@@ -35,8 +35,9 @@ python3.11 -m venv .venv && .venv/bin/pip install -r pi/requirements.txt
 .venv/bin/python pi/main.py --backend fake
 ```
 
-Open <http://localhost:8080/?debug=1&stt=mock>. You get two synthetic faces and a scripted
-transcript. Then with your webcam and real speech (needs the Deepgram key, step 3):
+Open <http://localhost:8080/?debug=1&stt=mic-test>. You get two synthetic faces and a live
+microphone meter, but never fake transcript text. Then use your webcam and live speech (needs a
+Speechmatics key, step 3):
 
 ```bash
 .venv/bin/python pi/main.py --backend mediapipe --source opencv
@@ -50,7 +51,7 @@ The page also reports to the server's terminal as `[page] ...` lines: which mic 
 every 5 s, transcription status and errors, and every attribution decision, e.g.
 
 ```
-[page] "see if these captions update" → face #4 (lips) voice=0 lips[#4=0.44] lag=1419ms
+[page] caption final chars=30 → face #4 (lips) voice=0 lips[#4=0.44] lag=619ms
 ```
 
 That is the main debugging tool on the Beam Pro, where the browser console is hard to reach.
@@ -75,7 +76,7 @@ remembers it in `settings.json`. Check the result at `http://<pi>:8080/video`.
 ## 2b. Jetson Orin Nano 8 GB setup
 
 The Jetson is a parallel host, not a replacement for the Pi files. It uses the same `pi/main.py` and
-web page with a Jetson CSI or USB camera source, plus a separate Arduino-to-TITAN bridge for coarse
+web page with an OAK-1, Jetson CSI, or USB camera source, plus a separate Arduino-to-TITAN bridge for coarse
 directional haptics.
 
 ```bash
@@ -84,14 +85,14 @@ sh scripts/jetson_install.sh
 ```
 
 For an isolated camera + browser-microphone test with no API key or extra electronics, run
-`sh scripts/jetson_video_mic_test.sh csi` and open the HTTPS URL it prints.
+`sh scripts/jetson_video_mic_test.sh oak` and open the HTTPS URL it prints. Use `csi` or `usb` for those cameras.
 
 Do not wire from the old Pi pin numbers: the Jetson developer kit has different power and UART rules.
 Follow the complete [Jetson wiring, firmware, calibration, and test runbook](docs/JETSON_SETUP.md).
 
-## 3. Deepgram key
+## 3. Speechmatics key
 
-Copy `.env.example` to `.env` and paste a key from <https://console.deepgram.com>.
+Copy `.env.example` to `.env` and paste a key from <https://portal.speechmatics.com/>.
 
 ## 4. On the Beam Pro
 
@@ -112,10 +113,10 @@ Copy `.env.example` to `.env` and paste a key from <https://console.deepgram.com
      path), set the dropdown to Enabled, and relaunch Chrome. It must be done in the browser on the
      device that opens the page.
 3. Open the page **with nothing after the `/`** (`https://<pi-ip>:8443/`), tap **Start captions**, allow
-   the mic. The page goes fullscreen and landscape, and stays black (= transparent in the glasses)
-   apart from the captions. If the address bar comes back (back swipe, screen lock), tap anywhere.
-   `?video=1&debug=1` is for debugging on a normal screen: `video=1` paints the camera feed over the
-   whole page, which in the glasses covers the real world, and turns calibration off. `?debug=1` and
+   the mic. The page goes fullscreen and landscape in the dark HUD mode with caption overlays.
+   If the address bar comes back (back swipe, screen lock), tap anywhere.
+   The bottom-left `B` toggles boxes; the adjacent menu contains calibration and a persisted
+   **Debug camera feed** checkbox. `?video=1&debug=1` forces feed plus diagnostics. `?debug=1` and
    `?debug=0` only apply to that visit; the Boxes button is what the device remembers.
 4. Put the glasses in head-locked ("follow") mode so the screen stays fixed to your view.
 
@@ -160,7 +161,7 @@ Settings → Microphone. Test the glasses' mics first: if people 1-2 m away come
    background thread; macOS only delivers camera frames on the main thread, and the Pi doesn't care.
 
 ### Page side (`web/`)
-1. **Transcription.** A provider (default Deepgram) streams the mic and emits one normalised event:
+1. **Transcription.** Speechmatics Realtime Enhanced streams the mic and emits one normalised event:
    text, final/interim, start and end time on the page's clock, and optionally per-word timings and a
    voice label per word.
 2. **Attribution** (`attribution.js`, unit-tested under Node). Face messages are timestamped on arrival
@@ -170,13 +171,13 @@ Settings → Microphone. Test the glasses' mics first: if people 1-2 m away come
    - a learned voice label (≥ 3 votes and twice its second choice) keeps its face through brief
      lip-score spikes at turn changes; sustained clear contradictory lips can correct it;
    - one face clearly ahead (score ≥ 0.40 and ≥ 0.15 above the runner-up) → that face;
-   - otherwise the bottom bar, rather than guessing between faces.
+   - otherwise the best visible lip candidate, so heard speech stays attached to a person.
    Only finalized, non-duplicate audio stretches of at least 250 ms train voice bindings.
    A new short voice isn't assigned to a face already bound to another voice, and missing historical
    frames aren't replaced with unrelated current frames.
    A voice that keeps speaking while nobody's lips move is learned as "the wearer / off-screen" and
-   stays in the bottom bar even if a listener nods or mouths along. A clear lip result is
-   used to correct a voice label only when it is sustained for at least 600 ms.
+   is not displayed unless a visible face can be selected. Clear lip evidence can correct a
+   stale voice label within 250 ms.
 3. **Drawing.** Camera and display are both fixed to the head, so camera→screen is four numbers (scale
    about the centre, offset) set once in Settings and stored on the device. Captions are smoothed,
    coloured per person, use a fixed-width two-line panel with left-aligned text, fade 4 s after the
@@ -194,7 +195,7 @@ were moving then. Two captions in two colours can be up at once.
 Where it struggles:
 - **Talking over each other.** One mic can't separate two voices; the words come out merged or garbled.
 - **Very short replies** ("yeah", "mm-hm"): often the wrong voice label and too little lip movement.
-- **Your own voice** is transcribed too and goes to the bottom bar, as does anyone out of the camera's view.
+- **Your own or off-camera speech** is transcribed but not displayed because no visible person can own it.
 - **A new voice** needs a few sentences before its label is trusted.
 - **Lost tracking** used to give a returning face a new number (new colour, voice relearned). Face
   memory (`pi/identity.py`) now gives it the old number back, as long as the face is big and frontal
@@ -212,7 +213,7 @@ Test without a second person: point the webcam at a screen playing a two-person 
    `https://<pi-hostname>.local:8443/?stt=speechmatics&debug=1` (or
    `http://localhost:8080/?stt=speechmatics&debug=1` on a laptop).
 3. Tap **Start captions**. You can also select **Speechmatics Enhanced (live + speakers)**
-   in Settings → transcription provider. Switch to Deepgram there for comparison.
+   in Settings → transcription provider.
 
 This uses Speechmatics' highest-accuracy Realtime model (`enhanced`), live speaker
 diarization, word timestamps, and partial transcripts. Finalization is configured at
@@ -240,34 +241,18 @@ References: [models](https://docs.speechmatics.com/speech-to-text/models),
 ### Provider interface
 
 Everything speech-to-text lives in `web/stt/`. Each provider is one file that turns mic audio into one
-normalised event (see the top of `web/stt/provider.js`). To add one: copy `deepgram.js`, import it in
+normalised event (see the top of `web/stt/provider.js`). To add one: follow `speechmatics.js`, import it in
 `web/app.js`, and if it needs a secret add a handler to `TOKEN_HANDLERS` in `pi/server.py`. Select it
 in Settings or with `?stt=<name>`. APIs that only return whole phrases (no word timings or speaker
 labels) still work; captions then appear a phrase at a time and the voice-label backup is skipped.
-`?stt=mock&mockphrases=1` simulates that.
-
-### Why you might switch
-Deepgram sends partial updates only about once a second and finalises in chunks. Measured here:
-finished phrases landed 0.5-1.4 s after they were spoken, and short trailing bits ("Later.") took 4-5 s
-because it waits to be sure you've stopped.
-
-Cloud candidates (from memory, September 2026; check current docs before building):
-
-| Option | Live feel | Word timings | Live speaker labels |
-|---|---|---|---|
-| Deepgram (built) | Updates about once a second | Yes | Yes |
-| Soniox | Streams almost word by word | Yes | Yes |
-| Speechmatics | Fast partials, tunable delay | Yes | Yes |
-| AssemblyAI streaming | Fast | Yes | Not live, as far as we know |
-| OpenAI Realtime transcription | A phrase at a time, after pauses | No (per phrase only) | No |
-
-Soniox and Speechmatics are the two that keep everything this app uses, so nothing downstream changes.
+Every registered transcription provider is required to consume a currently live microphone track;
+scripted/no-microphone providers are rejected by the shared provider boundary.
 
 ### Running a model locally
 Local models give no speaker labels, so attribution runs on lips alone (which held up well in testing).
 - **On the Pi 5:** small streaming models (Moonshine, sherpa-onnx, Vosk) run in real time but are
-  clearly less accurate than Deepgram and compete with face tracking for CPU.
-- **On a Jetson Orin Nano or a laptop:** faster-whisper or NVIDIA Parakeet can match or beat Deepgram
+  less accurate than a cloud Enhanced model and compete with face tracking for CPU.
+- **On a Jetson Orin Nano or a laptop:** faster-whisper or NVIDIA Parakeet can be competitive
   with no internet. Whisper-type models work in 1-3 s chunks, so they feel *less* live, not more.
 - **Wiring:** the page streams mic audio to that machine over a WebSocket and a `local.js` provider
   returns the same event format. See [docs/PORTING.md](docs/PORTING.md) section D.
@@ -282,8 +267,8 @@ search for sound sources: it aims a listening beam at each known face and asks h
 comes from each direction. That gives
 - **who is speaking** as a choice among two or three known directions, which works even when lips are
   hidden or two mouths are moving; and
-- **one audio stream per person**, each sent to transcription separately (Deepgram's multichannel mode
-  takes them over one connection). Attribution is then automatic: stream 1 is face 1.
+- **one audio stream per person**, each sent to transcription separately. Attribution is then
+  automatic: stream 1 is face 1.
 
 **Is head width enough?**
 - *Finding direction: yes.* ~15 cm between mics gives timing differences that resolve direction to
@@ -326,10 +311,11 @@ What this was built with, and what we learned about it:
   for transcription, beamforming or timing-based direction. The Jetson build independently calibrates
   one SEN-12642 and one KY-038 for coarse left/right loudness: useful for loud nearby alerts, unreliable
   for quiet speech or precise direction. A future matched, synchronised array is the real solution.
-- **Jetson Orin Nano.** A parallel CSI/USB-camera build is implemented, with separate Arduino sound
-  sensing and TITAN haptic services. See [docs/JETSON_SETUP.md](docs/JETSON_SETUP.md). OAK-1 remains
-  a future video-only source; see [docs/PORTING.md](docs/PORTING.md).
-- **mediapipe is pinned to 0.10.18:** 1.0.1 crashes on macOS at startup, and 0.10.21 has no Raspberry Pi build.
+- **Jetson Orin Nano.** The OAK-1, CSI, and USB-camera paths are implemented, with separate Arduino sound
+  sensing and TITAN haptic services. The OAK-1 supplies 60 fps RGB input only; MediaPipe runs through
+  the Jetson GPU delegate. See [docs/JETSON_SETUP.md](docs/JETSON_SETUP.md).
+- **MediaPipe versions.** The portable Pi/macOS requirements stay on 0.10.18. The Jetson installer
+  replaces that package with the checksum-verified 0.10.23 GPU wheel and its matching OpenCV 4.12 ABI.
 
 ## Tuning (pi/config.py, web/attribution.js)
 
@@ -350,7 +336,7 @@ python3 tests/test_jetson_camera.py
 ```
 
 ## Known limits
-- Only people inside the glasses' ~44° view get a floating caption; others get an edge arrow or the bottom bar.
+- Only people inside the glasses' ~44° view get a floating caption; off-camera speech is not displayed.
 - Lip detection needs a mostly frontal face. When someone turns away, their voice label takes over once it has been learned (a few sentences).
 - Text trails speech by roughly half a second to a second.
 - Tell people you're transcribing them.

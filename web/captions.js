@@ -7,7 +7,7 @@ export class CaptionBuffer {
   update(event, runs, now) {
     for (const run of runs) {
       if (!run.text) continue;
-      const key = run.faceId ?? 'bar';
+      const key = run.faceId;
       if (now - (this.updated.get(key) ?? -Infinity) > 4000) this.finals.delete(key);
       this.updated.set(key, now);
     }
@@ -16,7 +16,7 @@ export class CaptionBuffer {
     } else {
       for (const run of runs) {
         if (!run.text || run.endMs <= this.finalEnd + 1) continue;
-        const key = run.faceId ?? 'bar';
+        const key = run.faceId;
         let previous = this.finals.get(key);
         if (!previous) previous = { text: '', updated: now };
         this.finals.set(key, { text: `${previous.text} ${run.text}`.trim(), updated: now });
@@ -35,7 +35,7 @@ export class CaptionBuffer {
   textFor(key) {
     const final = this.finals.get(key);
     return [final?.text || '',
-      ...this.partial.filter(r => (r.faceId ?? 'bar') === key).map(r => r.text)].filter(Boolean).join(' ');
+      ...this.partial.filter(r => r.faceId === key).map(r => r.text)].filter(Boolean).join(' ');
   }
 
   compact(key, maxWidth, measure) {

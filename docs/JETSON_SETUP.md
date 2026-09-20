@@ -9,7 +9,7 @@ and the sound-sensor/haptic transport differ.
 - NVIDIA Jetson Orin Nano 8 GB developer kit on the NVIDIA P3768 reference carrier board.
 - JetPack with Python 3.10-3.12. JetPack 6.2.1 is the conservative dependency target; the installer
   also accepts a current JetPack whose Python remains in that range.
-- Camera: either a UVC USB webcam (least setup risk), or a Jetson-supported CSI camera. NVIDIA documents
+- Camera: an OAK-1 over USB 3, a UVC USB webcam, or a Jetson-supported CSI camera. NVIDIA documents
   Raspberry Pi Camera Module 2 / IMX219 with a 15-pin-to-22-pin cable. A Camera Module 3 / IMX708 is not
   a drop-in replacement unless the camera vendor supplies a matching Jetson driver/device tree.
 - The existing SEN-12642, KY-038, Arduino Uno, TITAN Core/THCR-004, Beam Pro, XREAL One, and motors.
@@ -29,7 +29,7 @@ flowchart LR
     KY["Right: KY-038<br/>AO"] -->|A1| UNO
     UNO -->|"USB A-to-B<br/>serial + power"| J["Jetson Orin Nano 8 GB"]
 
-    CAM["UVC USB camera<br/>or supported CSI camera"] --> J
+    CAM["OAK-1, UVC USB camera,<br/>or supported CSI camera"] --> J
     J -->|"USB-A to USB-C<br/>115200 serial + power"| TITAN["TITAN Core<br/>no mode jumper"]
     TITAN -->|L channel| ML["Left motor"]
     TITAN -->|R channel| MR["Right motor"]
@@ -37,7 +37,7 @@ flowchart LR
     FOURTH["Fourth kit motor"] -. "leave disconnected" .-> TITAN
 
     J -->|"HTTPS + WebSocket<br/>Wi-Fi/LAN"| BEAM["Beam Pro / Chrome"]
-    BEAM -->|"microphone audio"| STT["Deepgram or Speechmatics"]
+    BEAM -->|"microphone audio"| STT["Speechmatics Realtime Enhanced"]
     STT -->|"timestamped words"| BEAM
     BEAM -->|"USB-C display"| XREAL["XREAL One"]
 ```
@@ -55,8 +55,10 @@ put 5 V on a Jetson signal pin; every J12 signal is 3.3 V.
 
 1. Power the Jetson through its DC barrel jack with the supplied 19 V adapter. The developer kit's
    USB-C port is for data/device mode, not power.
-2. USB camera: connect it to any Jetson USB-A host port.
-3. CSI camera: with power removed, release a 22-pin CAM0 or CAM1 latch, insert the compatible ribbon,
+2. OAK-1: connect it directly to a blue Jetson USB 3 Type-A host port with a data-capable cable.
+   A healthy connection appears in `lsusb` as `03e7:2485 Intel Movidius MyriadX`.
+3. USB camera: connect it to any Jetson USB-A host port.
+4. CSI camera: with power removed, release a 22-pin CAM0 or CAM1 latch, insert the compatible ribbon,
    and close the latch. For a 15-pin IMX219 module, use a 15-to-22-pin conversion ribbon. On the Jetson
    end the 22 gold contacts face the bottom of the connector. Do not force a Pi 15-pin ribbon directly
    into the Jetson's 22-pin connector.
@@ -133,9 +135,11 @@ sh scripts/jetson_install.sh
 cp .env.example .env
 ```
 
-Paste the transcription key into `.env`. The install uses JetPack's `python3-opencv` because it has
-GStreamer support; a pip OpenCV wheel does not. Log out/in or reboot once after installation so the
-`video` and `dialout` group changes take effect.
+Paste the transcription key into `.env`. The installer builds a minimal OpenCV 4.12 with GStreamer
+when JetPack's older OpenCV ABI is present, verifies the published SHA-256 for MediaPipe
+`0.10.23+gpu`, and installs that wheel. On Jetson, startup requires the GLES GPU delegate; it never
+silently falls back to CPU. Log out/in or reboot once so the `video` and `dialout` group changes take
+effect.
 
 ## Flash the Arduino firmware
 
@@ -169,10 +173,10 @@ API key. The Jetson Orin Nano has no built-in microphone: the microphone under t
 phone opening the page. Both devices must be on the same network.
 
 ```bash
-sh scripts/jetson_video_mic_test.sh csi
+sh scripts/jetson_video_mic_test.sh oak
 ```
 
-Use `usb` instead of `csi` for a USB webcam. Open the HTTPS URL printed by the script, accept the
+Use `csi` or `usb` instead for those camera types. Open the HTTPS URL printed by the script, accept the
 self-signed-certificate warning, click **Start captions**, and allow microphone access. HTTPS is
 required because browsers block remote microphone access on plain HTTP.
 
@@ -181,6 +185,19 @@ debug display grows when you speak. `server.log` should also print `mic opened` 
 seconds by a non-zero `peak level` while you speak. This mode never uploads or transcribes the audio.
 
 ### A. Camera alone
+
+For the OAK-1:
+
+```bash
+lsusb | grep -i '03e7:2485\|Movidius'
+sh scripts/jetson_start.sh --camera oak --no-haptics
+```
+
+Pass: `server.log` says `OAK RGB camera opened`, `MediaPipe Face Landmarker delegate: GPU`, and reports
+`capture` near 60 fps. OAK is only the camera: MediaPipe, tracking, speaker attribution, and serving all run on the Jetson. Capture keeps
+only the newest frame, so slower inference can reduce vision updates but can never create a delayed
+frame queue. The debug URL must show a live, normally exposed image. If it stays nearly black, remove
+the lens cap/obstruction and point it at a lit scene before debugging face detection.
 
 For a USB camera:
 
@@ -201,8 +218,8 @@ gst-launch-1.0 nvarguscamerasrc ! \
 sh scripts/jetson_start.sh --camera csi --no-haptics
 ```
 
-Pass: `server.log` reports at least 15 fps, and `https://<jetson-ip>:8443/?video=1&debug=1&stt=mock`
-shows the live image with face boxes. If CSI opens the wrong connector mapping, try
+Pass: `server.log` reports at least 15 fps, and `https://<jetson-ip>:8443/?video=1&debug=1&stt=mic-test`
+shows the live image with face boxes and a live mic meter, without generating fake captions. If CSI opens the wrong connector mapping, try
 `--sensor-id 0`, then `--sensor-id 1`.
 
 ### B. Arduino sensor stream
@@ -268,7 +285,7 @@ Pass all of these separately:
 Install boot services only after the manual full-system test passes:
 
 ```bash
-sh scripts/jetson_autostart.sh csi   # or: usb
+sh scripts/jetson_autostart.sh oak   # or: csi / usb
 ```
 
 ## Failure isolation
@@ -276,6 +293,8 @@ sh scripts/jetson_autostart.sh csi   # or: usb
 | Symptom | Check |
 |---|---|
 | `OpenCV has no GStreamer support` | Remove pip OpenCV packages and rerun `jetson_install.sh`; use JetPack's apt OpenCV |
+| OAK is absent from `lsusb` | Use a data-capable cable and a Jetson USB 3 host port; avoid an unpowered hub |
+| OAK opens but image is black | Remove its lens cap/obstruction, add light, then restart and allow a few frames for auto-exposure |
 | CSI pipeline opens but no frame | Ribbon orientation, supported sensor/driver, CAM connector, then sensor ids 0 and 1 |
 | USB camera is busy | Close camera preview apps and check which `/dev/videoN` is the capture node |
 | No serial ports | Data-capable USB cables, `dialout` group, reconnect, then `--list-ports` |

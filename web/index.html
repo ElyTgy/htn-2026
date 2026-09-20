@@ -9,23 +9,26 @@
 <body>
   <img id="video" alt="" hidden>
   <div id="stage"></div>
-  <div id="bar" class="hidden"></div>
   <div id="hud" hidden></div>
 
   <div id="start">
     <h1>Caption Glasses</h1>
     <p id="start-status">Connecting…</p>
     <button id="start-btn">Start captions</button>
-    <p class="hint">Black shows as transparent in the glasses. Tap the top-left corner for settings.</p>
+    <p class="hint">Black shows as transparent in the glasses. Use the bottom-left controls for boxes and display settings.</p>
   </div>
 
-  <button id="settings-hotspot" aria-label="Settings"></button>
-  <button id="boxes-btn" aria-pressed="false" title="Show or hide the boxes around faces (B)">Boxes</button>
+  <div id="control-dock">
+    <button id="boxes-btn" aria-pressed="false" aria-label="Toggle face boxes" title="Show or hide face boxes (B)">B</button>
+    <button id="menu-btn" aria-expanded="false" aria-controls="settings" aria-label="Open display controls" title="Display controls">☰</button>
+  </div>
   <div id="settings" hidden>
     <h2>Settings</h2>
     <label>Microphone <select id="mic-select"></select></label>
     <label>Transcription <select id="stt-select"></select></label>
     <label class="row"><input type="checkbox" id="debug-toggle"> Show face boxes</label>
+    <label class="row"><input type="checkbox" id="video-toggle"> Debug camera feed</label>
+    <p class="hint">Off: dark HUD for the glasses. On: OAK video behind boxes and subtitles.</p>
     <label class="row"><input type="checkbox" id="mirror-toggle"> Mirror horizontally</label>
     <label class="row"><input type="checkbox" id="rotate-toggle"> Camera is sideways (rotate 90°)</label>
 

@@ -16,9 +16,10 @@ if [ "$CAMERA" = remove ]; then
 fi
 
 case "$CAMERA" in
+  oak) VISION_ARGS="--backend mediapipe --source oak" ;;
   csi) VISION_ARGS="--backend mediapipe --source jetson-csi" ;;
   usb) VISION_ARGS="--backend mediapipe --source opencv --source-arg $CAMERA_INDEX" ;;
-  *) echo "usage: $0 [csi|usb|remove]"; exit 2 ;;
+  *) echo "usage: $0 [oak|csi|usb|remove]"; exit 2 ;;
 esac
 
 sudo tee "$VISION_UNIT" >/dev/null <<EOF
@@ -32,6 +33,7 @@ User=$(whoami)
 SupplementaryGroups=video
 WorkingDirectory=$DIR
 EnvironmentFile=-$DIR/.env
+ExecStartPre=/usr/bin/truncate -s 0 $DIR/server.log
 ExecStart=$DIR/.venv/bin/python -u pi/main.py $VISION_ARGS
 Restart=always
 RestartSec=3

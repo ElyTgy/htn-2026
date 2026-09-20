@@ -5,6 +5,7 @@ Examples
   python pi/main.py --backend mediapipe --source opencv           # laptop / USB webcam
   python pi/main.py --backend mediapipe --source picamera2        # Raspberry Pi camera
   python pi/main.py --backend mediapipe --source jetson-csi       # Jetson CSI camera
+  python pi/main.py --backend mediapipe --source oak              # Luxonis OAK RGB camera
 """
 import argparse
 import sys
@@ -28,8 +29,6 @@ def vision_loop(cfg, backend, server, stop, remember_faces=True):
     tracker = Tracker(cfg)
     memory = FaceMemory(cfg, enabled=remember_faces)
     speakers = ActiveSpeakerDetector(cfg)
-    min_gap = 1.0 / cfg.send_hz
-    last_sent = 0.0
     frames, fps, fps_t0 = 0, 0.0, time.monotonic()
 
     try:
@@ -64,23 +63,27 @@ def vision_loop(cfg, backend, server, stop, remember_faces=True):
             speakers.forget_except(tracker.tracks.keys())
 
             frames += 1
+            latency_ms = max(0.0, (time.monotonic() - ts) * 1000)
             if ts - fps_t0 >= 2.0:
                 fps = frames / (ts - fps_t0)
                 frames, fps_t0 = 0, ts
                 detail = "  ".join(f"#{f['id']} mouth={f['mouth']:.3f} score={f['score']:.2f}" for f in faces)
-                print(f"{fps:5.1f} fps, {len(faces)} face(s)  {detail}".ljust(100), end="\r", flush=True)
+                capture_fps = getattr(backend, "capture_fps", fps)
+                print((f"capture {capture_fps:5.1f} fps  vision {fps:5.1f} fps  "
+                       f"latency {latency_ms:4.1f} ms, {len(faces)} face(s)  {detail}").ljust(140),
+                      end="\r", flush=True)
 
-            if ts - last_sent >= min_gap:
-                last_sent = ts
-                server.publish({"type": "frame", "t": round(ts * 1000), "fps": round(fps, 1), "faces": faces})
+            server.publish({"type": "frame", "t": round(ts * 1000), "fps": round(fps, 1),
+                            "captureFps": round(getattr(backend, "capture_fps", fps), 1),
+                            "latencyMs": round(latency_ms, 1), "faces": faces})
     finally:
         backend.stop()
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--backend", choices=["mediapipe", "fake", "oak"], default="mediapipe")
-    p.add_argument("--source", choices=["picamera2", "opencv", "jetson-csi"], default="picamera2")
+    p.add_argument("--backend", choices=["mediapipe", "fake"], default="mediapipe")
+    p.add_argument("--source", choices=["picamera2", "opencv", "jetson-csi", "oak"], default="picamera2")
     p.add_argument("--source-arg", default="", help=(
         "camera index, video file or GStreamer string (opencv), or Jetson CSI sensor id; "
         "leave empty to try sensor ids 0 and 1"

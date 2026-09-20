@@ -10,7 +10,4 @@ def make_backend(name: str, source_name: str, source_arg: str, cfg) -> VisionBac
         from sources import make_source
         from .mediapipe_backend import MediaPipeBackend
         return MediaPipeBackend(make_source(source_name, source_arg, cfg), cfg)
-    if name == "oak":
-        from .oak_backend import OakBackend
-        return OakBackend(cfg)
     raise ValueError(f"unknown backend: {name}")

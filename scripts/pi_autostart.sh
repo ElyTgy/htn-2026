@@ -24,6 +24,7 @@ Wants=network-online.target
 [Service]
 User=$(whoami)
 WorkingDirectory=$DIR
+ExecStartPre=/usr/bin/truncate -s 0 $DIR/server.log
 ExecStart=$DIR/.venv/bin/python -u pi/main.py --backend mediapipe --source picamera2
 Restart=always
 RestartSec=3
