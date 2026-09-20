@@ -32,13 +32,15 @@ TITAN's RXD/TXD header shares the ESP32 UART used by its USB bridge. Disconnect 
 
 ## Behavior
 
+**Power-on cue:** five seconds after every Uno reset, the left, back and right motors each play one finite 3-second effect in that order, at the intensity ceiling and that motor's trim. It needs no calibration or qualification and does not count toward qualification. Sound-driven output and most commands (`BUSY`) pause while it plays; any mute cancels what remains. Opening the Uno's USB serial port resets the Uno, so connecting the recorder replays it. With no confirmed TITAN version it uses the VH 2.0 command order, which this kit's TITAN reported (2.0.1.0); change `STARTUP_FALLBACK_PROFILE` in `TitanAdapter.h` if TITAN is reflashed to VH 2.1 before a profile is saved.
+
 Each input is averaged in approximately 5 ms windows. The ADC runs at its standard Uno configuration; the first conversion after switching channels is discarded for settling. No deliberate sample delay is used. SoftwareSerial writes **block** sampling, and the actual interruption appears in telemetry.
 
-Five seconds of quiet establish separate thresholds: mean + max(1.5 counts, 3 standard deviations), with a lower close threshold. At or below the opening threshold, commanded intensity is exactly zero. A previously sent finite effect may still be finishing. Clipped or interrupted calibration is rejected and the last valid record retained.
+Five seconds of quiet establish a separate noise floor per microphone: mean + max(1.5 counts, 3 standard deviations), with a lower close level. A **loudness threshold** (default 40 ADC counts, `THRESHOLD` 0–200, saved with the settings) is added to both, so ordinary room activity stays silent and only louder sound opens a channel. In this kit's recordings quiet read about 7 counts, room activity 10–40 and loud events 70–500. At or below the opening level, commanded intensity is exactly zero. A previously sent finite effect may still be finishing. Clipped or interrupted calibration is rejected and the last valid record retained.
 
 Above each threshold:
 
-1. Measure the fraction of available ADC range up to **970 / 1023 counts**. A normal speech/reference sound does not redefine maximum output.
+1. Measure the fraction of the ADC range from the opening level (noise floor + loudness threshold) up to **970 / 1023 counts**. A normal speech/reference sound does not redefine maximum output.
 2. Apply a fixed sensitivity curve. The default is `x^0.4`; levels 1–5 use exponents 0.8, 0.6, 0.4, 0.3, 0.2. This lifts small sound changes without automatic gain control.
 3. Compare the three excess amplitudes. Directional contrast suppresses quieter sides and fades near full scale. It never creates output on a silent channel. The default exponent is `1.5 × (1 − x)²` applied to the ratio to the loudest channel.
 4. Smooth with approximately 5 ms attack / 50 ms release while above the floor. Returning to the floor clears the command immediately.

@@ -7,6 +7,10 @@ struct __attribute__((packed)) Saved{
  uint8_t ceiling,profile,qualified,trim[3],sensitivity,contrast;
  uint16_t crc;uint8_t committed;
 };
+// The v3 record fills its 64-byte slot, so the loudness threshold is kept beside
+// the slots as a value and its complement; a mismatch means the default applies.
+static const int THRESHOLD_AT=640;
+static const uint8_t THRESHOLD_DEFAULT=40,THRESHOLD_MAX=200;
 static_assert(sizeof(Saved)<=64,"EEPROM slot overflow");
 inline bool savedValid(const Saved&s){
  dh::Calibration c;memcpy(&c,(const uint8_t*)&s+offsetof(Saved,calibration),sizeof(c));

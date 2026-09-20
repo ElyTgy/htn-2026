@@ -19,7 +19,7 @@ float amplitude[3]={},peak[3]={},quietFloor[3]={},quietClose[3]={},quietSd[3]={}
 uint16_t desired[3]={},sent[3]={};
 uint32_t sentAt[3]={},expiresAt[3]={},riseAt[3]={};
 bool calibrated=false,qualified=false,muted=false,quietReady=false,saving=false,phaseBad=false,telemetryOn=true;
-uint8_t profile=0,ceiling=100,trim[3]={100,100,100},sensitivity=3,contrast=15,phase=0,testMask=0,nextChannel=0;
+uint8_t profile=0,ceiling=100,trim[3]={100,100,100},sensitivity=3,contrast=15,phase=0,testMask=0,nextChannel=0,startupStep=0,threshold=THRESHOLD_DEFAULT;
 uint32_t windowAt=0,reportAt=0,processedAt=0,rateAt=0,previousCycle=0,rateSamples=0,seq=0,calAt=0;
 uint32_t lastTxAt=0,probeUntil=0,testUntil=0,txCount=0;
 uint16_t rate=0,maxGap=0,txUs=0,updateRate=0,dropped=0,commandSequence=0,maxOnsetLatency=0;
@@ -56,6 +56,7 @@ void drain(){
 void clearLevels(){for(uint8_t i=0;i<3;i++){envelope[i].clear();desired[i]=0;riseAt[i]=0;}}
 void loadSaved(){
  // Dedicated slots: previous Rev 1 and unshipped sensor-draft EEPROM untouched.
+ uint8_t t=EEPROM.read(THRESHOLD_AT);if(t<=THRESHOLD_MAX&&EEPROM.read(THRESHOLD_AT+1)==(uint8_t)~t)threshold=t;
  Saved a,b;EEPROM.get(512,a);EEPROM.get(576,b);bool va=savedValid(a),vb=savedValid(b);if(!va&&!vb)return;
  activeSlot=vb&&(!va||(int16_t)(b.generation-a.generation)>0)?1:0;const Saved&s=activeSlot?b:a;
  calibration=s.calibration;generation=s.generation;ceiling=s.ceiling;profile=s.profile;qualified=s.qualified;
@@ -72,6 +73,8 @@ void serviceSave(){
  if(saveStep==0)EEPROM.update(base+offsetof(Saved,committed),0);
  else if(saveStep<=offsetof(Saved,committed))EEPROM.update(base+saveStep-1,((uint8_t*)&saveBuffer)[saveStep-1]);
  else if(saveStep==offsetof(Saved,committed)+1)EEPROM.update(base+offsetof(Saved,committed),0xa5);
+ else if(saveStep==offsetof(Saved,committed)+2)EEPROM.update(THRESHOLD_AT,threshold);
+ else if(saveStep==offsetof(Saved,committed)+3)EEPROM.update(THRESHOLD_AT+1,(uint8_t)~threshold);
  else {if(eventLength)return;saving=false;activeSlot=saveSlot;generation=saveBuffer.generation;event(0,"OK","SAVED");return;}
  ++saveStep;
 }
@@ -107,7 +110,7 @@ void processWindow(uint32_t now){
  uint32_t dt=now-windowAt;if(dt<5000||window.n<3)return;
  for(uint8_t i=0;i<3;i++){amplitude[i]=window.mean(i);if(amplitude[i]>peak[i])peak[i]=amplitude[i];}
  calibrationWindow(dt);
- if(calibrated&&!phase&&!saving)dh::process(envelope,amplitude,calibration,dt,sensitivity,contrast);
+ if(calibrated&&!phase&&!saving)dh::process(envelope,amplitude,calibration,dt,sensitivity,contrast,threshold);
  else for(uint8_t i=0;i<3;i++)envelope[i].clear();
  for(uint8_t i=0;i<3;i++){
    desired[i]=calibrated&&qualified&&!phase&&!saving&&!muted?
@@ -117,11 +120,24 @@ void processWindow(uint32_t now){
  window.clear();windowAt=processedAt=now;
 }
 void sendEffect(uint8_t i,uint16_t level,uint16_t duration){
- char command[48];int n=titanEffect(command,sizeof(command),profile,i,level,duration);if(n<=0||n>=(int)sizeof(command))return;
+ uint8_t format=profile||startupStep>2?profile:STARTUP_FALLBACK_PROFILE;
+ char command[48];int n=titanEffect(command,sizeof(command),format,i,level,duration);if(n<=0||n>=(int)sizeof(command))return;
  // SoftwareSerial is blocking, with interrupts masked within each byte.
  uint32_t start=micros();titan.write((uint8_t*)command,n);uint32_t end=micros();txUs=bounded(end-start);lastTxAt=end;
  sentAt[i]=end;expiresAt[i]=millis()+duration;sent[i]=level;++commandSequence;++txCount;
  if(riseAt[i]){uint16_t latency=bounded(end-riseAt[i]);if(latency>maxOnsetLatency)maxOnsetLatency=latency;riseAt[i]=0;}
+}
+void serviceStartup(){
+ // Power-on cue, steps 0-2: left, back, right. It needs no calibration or
+ // qualification, honors ceiling and trim, waits for idle and is canceled by
+ // any mute. Every Uno reset replays it, including a USB connection's auto-reset.
+ if(startupStep>2)return;
+ if(muted){startupStep=3;return;}
+ if(millis()<STARTUP_DELAY_MS||phase||saving||probeUntil||testUntil)return;
+ uint8_t i=startupStep==0?1:startupStep==1?0:2;uint16_t level=(uint16_t)ceiling*trim[i]/10;
+ clearLevels();if(level)sendEffect(i,level,STARTUP_EFFECT_MS);
+ if(!startupStep)event(0,"OK","STARTUP_SEQUENCE");
+ testUntil=millis()+STARTUP_EFFECT_MS+10;++startupStep;
 }
 void serviceMotors(){
  for(uint8_t i=0;i<3;i++)if(sent[i]&&(int32_t)(millis()-expiresAt[i])>=0)sent[i]=0;
@@ -151,6 +167,7 @@ void executeCommand(char*line){
  else if(!strcmp_P(name,PSTR("SAVE"))&&value==0){if(!calibrated)event(id,"ERR","CAL_REQUIRED");else {beginSave();event(id,"OK","SAVING");}}
  else if(!strcmp_P(name,PSTR("SENSITIVITY"))&&value>=1&&value<=5){sensitivity=value;settingsDue=true;event(id,"OK","SENSITIVITY_SET");}
  else if(!strcmp_P(name,PSTR("CONTRAST"))&&value>=0&&value<=30){contrast=value;settingsDue=true;event(id,"OK","CONTRAST_SET");}
+ else if(!strcmp_P(name,PSTR("THRESHOLD"))&&value>=0&&value<=THRESHOLD_MAX){threshold=value;clearLevels();settingsDue=true;event(id,"OK","THRESHOLD_SET");}
  else if(!strcmp_P(name,PSTR("CEILING"))&&value>=0&&value<=100){ceiling=value;event(id,"OK","CEILING_SET");}
  else if(strlen(name)==5&&!strncmp_P(name,PSTR("TRIM"),4)&&name[4]>='0'&&name[4]<='2'&&value>=25&&value<=100){trim[name[4]-'0']=value;event(id,"OK","TRIM_SET");}
  else if(!strcmp_P(name,PSTR("RESUME"))&&value==0){muted=false;event(id,"OK","RESUMED");}
@@ -187,7 +204,7 @@ void serviceProbe(){
 void emitSettings(uint32_t now){
  if(now-settingsAt>1000000UL)settingsDue=true;
  if(!settingsDue||eventLength)return;
- SettingsTelemetry c={};c.sensitivity=sensitivity;c.contrast=contrast;c.fullScale=970;
+ SettingsTelemetry c={};c.sensitivity=sensitivity;c.contrast=contrast;c.fullScale=970;c.threshold=threshold;
  for(uint8_t i=0;i<3;i++){c.gain[i]=(uint16_t)((calibrated?calibration.gain[i]:1)*1000+.5f);c.frequency[i]=titanFrequency(i);}
  if(queueFrame(3,&c,sizeof(c))){settingsAt=now;settingsDue=false;}
 }
@@ -202,7 +219,8 @@ void emitTelemetry(uint32_t now){
    for(uint8_t i=0;i<3;i++){
      ChannelTelemetry &c=t.channel[i];c.raw=report.raw[i];c.low=report.lo[i];c.high=report.hi[i];c.meanQ4=q4(report.mean(i));c.amplitudeQ4=q4(amplitude[i]);c.peakQ4=q4(peak[i]);
      c.normalized=(uint16_t)(envelope[i].normalized*1000+0.5f);c.smoothed=(uint16_t)(envelope[i].smoothed*1000+0.5f);c.desired=desired[i];c.sent=sent[i];
-     c.floorQ4=q4(calibration.floor[i]);c.referenceQ4=q4(calibration.reference[i]);c.closeQ4=q4(calibration.close[i]);
+     // Reported floor/close are the effective gate: calibrated noise floor plus the loudness threshold.
+     c.floorQ4=q4(fminf(calibration.floor[i]+threshold,1023));c.referenceQ4=q4(calibration.reference[i]);c.closeQ4=q4(fminf(calibration.close[i]+threshold,1023));
    }
    if(eventLength||!queueFrame(1,&t,sizeof(t)))++dropped;else maxOnsetLatency=0;
  }
@@ -214,10 +232,10 @@ void loop(){
  uint16_t a[3];for(uint8_t i=0;i<3;i++){analogRead(A0+i);a[i]=analogRead(A0+i);}
  uint32_t sampledAt=micros();
  if(calibrated&&qualified&&!muted&&!phase&&!saving&&!probeUntil&&!testUntil){
-   for(uint8_t i=0;i<3;i++)if(!envelope[i].open&&!riseAt[i]&&a[i]>calibration.floor[i])riseAt[i]=sampledAt;
+   for(uint8_t i=0;i<3;i++)if(!envelope[i].open&&!riseAt[i]&&a[i]>calibration.floor[i]+threshold)riseAt[i]=sampledAt;
  }
  window.add(a);report.add(a);++rateSamples;
- processWindow(micros());serviceInput();serviceProbe();serviceSave();serviceMotors();drain();uint32_t now=micros();
+ processWindow(micros());serviceInput();serviceProbe();serviceSave();serviceStartup();serviceMotors();drain();uint32_t now=micros();
  if(now-rateAt>=1000000UL){rate=bounded(rateSamples*1000UL/((now-rateAt)/1000));updateRate=bounded(txCount*1000UL/((now-rateAt)/1000));rateSamples=txCount=0;rateAt=now;}
  emitTelemetry(now);emitSettings(now);
 }

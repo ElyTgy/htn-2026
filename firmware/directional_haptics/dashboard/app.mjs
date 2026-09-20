@@ -47,7 +47,7 @@ function updateState(next){
   const lines=state.events.filter(e=>e.type!=='start').slice(-6).map(e=>`${timeLabel(e.elapsed_s)} · ${e.label}`);
   $('events').replaceChildren(...lines.map(text=>{const div=document.createElement('div');div.textContent=text;return div;}));
   const fw=state.firmware;
-  if(state?.settings&&!mappingLoaded&&!isDemo){$('sensitivity').value=state.settings.sensitivity;$('contrast').value=state.settings.contrast;mappingLoaded=true;}
+  if(state?.settings&&!mappingLoaded&&!isDemo){$('sensitivity').value=state.settings.sensitivity;$('contrast').value=state.settings.contrast;$('threshold').value=state.settings.threshold;mappingLoaded=true;}
   if(fw&&!settingsLoaded&&!isDemo){$('profile').value=String(fw.profile);$('ceiling').value=fw.ceiling;for(let i=0;i<3;i++)$('trim'+i).value=fw.trims[i];settingsLoaded=true;}
   const blocked=isDemo||!connected||!state.live||busy||!!state.pending;
   for(const button of document.querySelectorAll('[data-command], [data-trim], #setCeiling, #setProfile, #setSensitivity, #setContrast'))button.disabled=blocked;
@@ -89,6 +89,7 @@ $('reconnect').onclick=()=>command('reconnect');
 function firmwareCommand(name,value=0){return command('command',{name,value});}
 for(const button of document.querySelectorAll('[data-command]'))button.onclick=()=>firmwareCommand(button.dataset.command,Number(button.dataset.value||0));
 $('setSensitivity').onclick=()=>firmwareCommand('SENSITIVITY',Number($('sensitivity').value));
+$('setThreshold').onclick=()=>{if($('threshold').reportValidity())firmwareCommand('THRESHOLD',Number($('threshold').value));};
 $('setContrast').onclick=()=>firmwareCommand('CONTRAST',Number($('contrast').value));
 $('setCeiling').onclick=()=>{if($('ceiling').reportValidity())firmwareCommand('CEILING',Number($('ceiling').value));};
 $('setProfile').onclick=()=>{$('observed').checked=false;firmwareCommand('PROFILE',Number($('profile').value));};

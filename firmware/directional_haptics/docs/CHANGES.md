@@ -10,5 +10,7 @@
 - Version 3 EEPROM and CRC-framed DH v3 USB telemetry; old calibration is rejected.
 - Matching dashboard retains Together/Apart/individual views, adds sensitivity and contrast controls, and includes a clearly labeled simulation.
 - Setup tools pin the official TITAN VH 2.1 image and back up the ESP32 before writing. Existing two-sensor firmware and earlier comparison recordings are preserved.
+- Power-on cue: five seconds after reset, left, back and right each play one 3-second effect. The adapter's effect-duration limit rose from 2000 to 3000 ms for it.
+- Loudness threshold: a channel opens only above its calibrated noise floor plus `THRESHOLD` ADC counts (default 40), and the output range starts there. Settings frames grew to 17 bytes to report it; it is stored at EEPROM 640–641 beside the unchanged v3 record. Added after the floor-only gate fired continuously on ordinary room sound.
 
 Physical deployment/qualification is pending; see TEST_RECORD.md.

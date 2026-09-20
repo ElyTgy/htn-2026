@@ -14,6 +14,6 @@ static_assert(sizeof(Telemetry)==114,"wire schema mismatch");
 // Type 1 telemetry; type 2 ASCII events: '<id> OK|ERR|TITAN <message>'.
 
 struct __attribute__((packed)) SettingsTelemetry {
- uint8_t sensitivity,contrast;uint16_t fullScale,gain[3],frequency[3];
+ uint8_t sensitivity,contrast;uint16_t fullScale,gain[3],frequency[3];uint8_t threshold;
 };
-static_assert(sizeof(SettingsTelemetry)==16,"settings schema mismatch");
+static_assert(sizeof(SettingsTelemetry)==17,"settings schema mismatch");

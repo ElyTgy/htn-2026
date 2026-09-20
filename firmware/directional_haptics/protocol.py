@@ -9,11 +9,11 @@ assert SIZE == 114
 
 def decode(kind, payload):
     if kind == 3:
-        if len(payload)!=16: raise ValueError('Invalid settings length')
-        sensitivity,contrast,full,*values=struct.unpack('<BB7H',payload)
-        if not 1<=sensitivity<=5 or not 0<=contrast<=30 or full!=970 or any(not 500<=v<=2000 for v in values[:3]) or values[3:]!=[160,95,130]:
+        if len(payload)!=17: raise ValueError('Invalid settings length')
+        sensitivity,contrast,full,*values,threshold=struct.unpack('<BB7HB',payload)
+        if threshold>200 or not 1<=sensitivity<=5 or not 0<=contrast<=30 or full!=970 or any(not 500<=v<=2000 for v in values[:3]) or values[3:]!=[160,95,130]:
             raise ValueError('Invalid settings')
-        return dict(type='settings',sensitivity=sensitivity,contrast=contrast,full_scale=full,gains=[v/1000 for v in values[:3]],frequencies=values[3:])
+        return dict(type='settings',sensitivity=sensitivity,contrast=contrast,threshold=threshold,full_scale=full,gains=[v/1000 for v in values[:3]],frequencies=values[3:])
     if kind == 2:
         text = payload.decode('ascii')
         parts = text.split(' ', 2)
@@ -50,7 +50,7 @@ class Decoder:
             if self.buffer[:2]!=b'DH':
                 del self.buffer[0];self.invalid+=1;continue
             n,tag=self.buffer[2:4]
-            if n>114 or tag not in (0x31,0x32,0x33) or (tag==0x31 and n!=114) or (tag==0x32 and n>71) or (tag==0x33 and n!=16):
+            if n>114 or tag not in (0x31,0x32,0x33) or (tag==0x31 and n!=114) or (tag==0x32 and n>71) or (tag==0x33 and n!=17):
                 del self.buffer[0];self.invalid+=1;continue
             if len(self.buffer)<n+6: break
             packet=bytes(self.buffer[:n+6])

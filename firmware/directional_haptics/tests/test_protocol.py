@@ -11,12 +11,12 @@ def packet(seq=1):
 
 class Tests(unittest.TestCase):
     def test_settings_and_old_version(self):
-        p=encode_test_frame(3,struct.pack('<BB7H',3,15,970,1000,750,1500,160,95,130))
+        p=encode_test_frame(3,struct.pack('<BB7HB',3,15,970,1000,750,1500,160,95,130,40))
         d=Decoder();settings=d.feed(p)[0]
         self.assertEqual(settings['gains'],[1,.75,1.5])
-        self.assertEqual(settings['full_scale'],970)
+        self.assertEqual(settings['full_scale'],970);self.assertEqual(settings['threshold'],40)
         for invalid in [(0,15,970),(3,31,970),(3,15,112)]:
-            self.assertEqual(d.feed(encode_test_frame(3,struct.pack('<BB7H',*invalid,1000,1000,1000,160,95,130))),[])
+            self.assertEqual(d.feed(encode_test_frame(3,struct.pack('<BB7HB',*invalid,1000,1000,1000,160,95,130,40))),[])
         old=bytearray(packet());old[3]=0x21
         old[-2:]=binascii.crc_hqx(old[2:-2],0xffff).to_bytes(2,'little')
         self.assertEqual(len(d.feed(old+p)),1)
@@ -38,13 +38,13 @@ class Tests(unittest.TestCase):
             with self.assertRaises(ValueError):r.send_command('RESUME')
             r.accept_ack(dict(id=r.pending['id'],result='OK',message='MUTED'))
             self.assertIsNone(r.pending)
-            for name,value in [('TEST',5),('CEILING',101),('MUTE',True),('BOGUS',0),('SENSITIVITY',0),('SENSITIVITY',6),('CONTRAST',31)]:
+            for name,value in [('TEST',5),('CEILING',101),('MUTE',True),('BOGUS',0),('SENSITIVITY',0),('SENSITIVITY',6),('THRESHOLD',201),('CONTRAST',31)]:
                 with self.assertRaises(ValueError):r.send_command(name,value)
             first=r.session;r.stop()
             with (first/'readings.csv').open() as f: rows=list(csv.DictReader(f))
             self.assertEqual(float(rows[0]['a1_mean']),21)
             self.assertEqual(float(rows[0]['a2_sent']),11)
-            settings=Decoder().feed(encode_test_frame(3,struct.pack('<BB7H',4,20,970,1000,1000,1000,160,95,130)))[0]
+            settings=Decoder().feed(encode_test_frame(3,struct.pack('<BB7HB',4,20,970,1000,1000,1000,160,95,130,40)))[0]
             r.accept_settings(settings)
             r.start();self.assertNotEqual(first,r.session)
             self.assertEqual(json.loads((r.session/'metadata.json').read_text())['settings_at_start'],settings)

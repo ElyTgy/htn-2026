@@ -55,11 +55,14 @@ struct Envelope {
   bool open;
   float normalized,corrected,shaped,smoothed;
   void clear() { open=false;normalized=corrected=shaped=smoothed=0; }
-  void measure(float x,const Calibration &c,uint8_t i,uint8_t sensitivity) {
-    if(open && x<=c.close[i]) open=false;
-    else if(!open && x>c.floor[i]) open=true;
-    normalized=open ? normalize(x,c.floor[i],c.reference[i]) : 0;
-    corrected=normalized>0 ? (x-c.floor[i])*c.gain[i] : 0;
+  // margin: loudness threshold in ADC counts above the calibrated noise floor.
+  // Output is zero up to floor+margin and the range to full scale starts there.
+  void measure(float x,const Calibration &c,uint8_t i,uint8_t sensitivity,float margin) {
+    float opening=c.floor[i]+margin;
+    if(open && x<=c.close[i]+margin) open=false;
+    else if(!open && x>opening) open=true;
+    normalized=open ? normalize(x,opening,c.reference[i]) : 0;
+    corrected=normalized>0 ? (x-opening)*c.gain[i] : 0;
     shaped=shape(normalized,sensitivity);
   }
   void smooth(float target,uint32_t dt) {
@@ -72,10 +75,10 @@ struct Envelope {
   }
 };
 inline void process(Envelope e[3],const float amplitudes[3],const Calibration &c,
-                    uint32_t dt,uint8_t sensitivity,uint8_t contrastTenths) {
+                    uint32_t dt,uint8_t sensitivity,uint8_t contrastTenths,uint8_t thresholdCounts=0) {
   float loudest=0;
   for(uint8_t i=0;i<3;i++) {
-    e[i].measure(amplitudes[i],c,i,sensitivity);
+    e[i].measure(amplitudes[i],c,i,sensitivity,thresholdCounts);
     if(e[i].corrected>loudest) loudest=e[i].corrected;
   }
   for(uint8_t i=0;i<3;i++) {

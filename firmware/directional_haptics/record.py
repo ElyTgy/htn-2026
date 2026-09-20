@@ -161,7 +161,7 @@ class Recorder:
 
     def send_command(self, name, value=0):
         allowed = {'HELLO':{0},'QUIET':{0},'REFERENCE':{0},'SAVE':{0},'MUTE':{0},'RESUME':{0},'CANCEL':{0},
-                   'SENSITIVITY':range(1,6),'CONTRAST':range(31),'PROFILE':{0,20,21},'PROBE':{0},'TEST':{1,2,3,4},'QUALIFY':{1},'CEILING':range(101),
+                   'SENSITIVITY':range(1,6),'THRESHOLD':range(201),'CONTRAST':range(31),'PROFILE':{0,20,21},'PROBE':{0},'TEST':{1,2,3,4},'QUALIFY':{1},'CEILING':range(101),
                    'TRIM0':range(25,101),'TRIM1':range(25,101),'TRIM2':range(25,101)}
         if not isinstance(name,str) or name not in allowed or type(value) is not int or value not in allowed[name]:
             raise ValueError('Unknown command or out-of-range value')
