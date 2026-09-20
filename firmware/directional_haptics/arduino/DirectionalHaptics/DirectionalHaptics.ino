@@ -16,6 +16,7 @@ SoftwareSerial titan(2,3);
 dh::Window window,report;
 dh::Calibration calibration={};dh::Moments moments[3];dh::Envelope envelope[3];
 float amplitude[3]={},peak[3]={},quietFloor[3]={},quietClose[3]={},quietSd[3]={};
+float selfGain[3]={SELF_DEFAULT[0],SELF_DEFAULT[1],SELF_DEFAULT[2]},selfNoise=0,cueSum=0;uint16_t cueN=0,cueLevel=0;uint8_t cueChannel=0;uint32_t cueAt=0;
 uint16_t desired[3]={},sent[3]={},forced[3]={};
 uint32_t sentAt[3]={},expiresAt[3]={},riseAt[3]={};
 bool calibrated=false,qualified=false,muted=false,quietReady=false,saving=false,phaseBad=false,telemetryOn=true;
@@ -52,6 +53,11 @@ void drain(){
  if(txOffset>=txLength&&eventLength&&queueFrame(2,pendingEvent,eventLength))eventLength=0;
  uint8_t n=txLength-txOffset;if(n>16)n=16;int available=Serial.availableForWrite();if(n>available)n=available;
  if(n)txOffset+=Serial.write(tx+txOffset,n);
+}
+// Counts added to every gate for what TITAN itself puts on the microphones.
+float gateLift(){
+ uint32_t idle=millis()-expiresAt[0];
+ return SELF_MARGIN*selfNoise+(idle>=POP_FROM_MS&&idle<POP_UNTIL_MS?POP_COUNTS:0);
 }
 void clearLevels(){for(uint8_t i=0;i<3;i++){envelope[i].clear();desired[i]=forced[i]=0;riseAt[i]=0;}}
 void loadSaved(){
@@ -110,7 +116,11 @@ void processWindow(uint32_t now){
  uint32_t dt=now-windowAt;if(dt<5000||window.n<3)return;
  for(uint8_t i=0;i<3;i++){amplitude[i]=window.mean(i);if(amplitude[i]>peak[i])peak[i]=amplitude[i];}
  calibrationWindow(dt);
- if(calibrated&&!phase&&!saving)dh::process(envelope,amplitude,calibration,dt,sensitivity,contrast,threshold);
+ // What the playing motors add to the microphones right now; it fades like the envelope does.
+ float playing=0;for(uint8_t i=0;i<3;i++)if(sent[i])playing+=selfGain[i]*sent[i]/1000;
+ selfNoise=playing>selfNoise?playing:selfNoise+(playing-selfNoise)*(float(dt)/(SELF_RELEASE_US+dt));
+ if(cueLevel&&millis()-cueAt>500&&millis()-cueAt<STARTUP_EFFECT_MS-200){cueSum+=(amplitude[0]+amplitude[1]+amplitude[2])/3;++cueN;}
+ if(calibrated&&!phase&&!saving)dh::process(envelope,amplitude,calibration,dt,sensitivity,contrast,threshold+gateLift());
  else for(uint8_t i=0;i<3;i++)envelope[i].clear();
  for(uint8_t i=0;i<3;i++){
    desired[i]=calibrated&&qualified&&!phase&&!saving&&!muted?
@@ -120,22 +130,31 @@ void processWindow(uint32_t now){
  window.clear();windowAt=processedAt=now;
 }
 void sendEffect(uint8_t i,uint16_t level,uint16_t duration){
- uint8_t format=profile||startupStep>2?profile:STARTUP_FALLBACK_PROFILE;
+ uint8_t format=profile||startupStep>3?profile:STARTUP_FALLBACK_PROFILE;
  char command[48];int n=titanEffect(command,sizeof(command),format,i,level,duration);if(n<=0||n>=(int)sizeof(command))return;
  // SoftwareSerial is blocking, with interrupts masked within each byte.
  uint32_t start=micros();titan.write((uint8_t*)command,n);uint32_t end=micros();txUs=bounded(end-start);lastTxAt=end;
  sentAt[i]=end;expiresAt[i]=millis()+duration;sent[i]=level;++commandSequence;++txCount;
  if(riseAt[i]){uint16_t latency=bounded(end-riseAt[i]);if(latency>maxOnsetLatency)maxOnsetLatency=latency;riseAt[i]=0;}
 }
+void finishCueMeasure(){
+ // Self-noise of the motor that just played alone, scaled to 100%. Needs a calibrated quiet level.
+ if(cueLevel&&cueN>100&&calibrated){
+   float quiet=0;for(uint8_t i=0;i<3;i++)quiet+=(2*calibration.close[i]-calibration.floor[i])/3;
+   float gain=(cueSum/cueN-quiet)*1000/cueLevel;selfGain[cueChannel]=gain<0?0:gain>SELF_MAX?SELF_MAX:gain;
+ }
+ cueLevel=0;cueN=0;cueSum=0;
+}
 void serviceStartup(){
  // Power-on cue, steps 0-2: left, back, right. It needs no calibration or
  // qualification, honors ceiling and trim, waits for idle and is canceled by
  // any mute. Every Uno reset replays it, including a USB connection's auto-reset.
- if(startupStep>2)return;
- if(muted){startupStep=3;return;}
+ if(startupStep>3)return;
+ if(muted){cueLevel=0;startupStep=4;return;}
  if(millis()<STARTUP_DELAY_MS||phase||saving||probeUntil||testUntil)return;
+ finishCueMeasure();if(startupStep>2){startupStep=4;return;}
  uint8_t i=startupStep==0?1:startupStep==1?0:2;uint16_t level=(uint16_t)ceiling*trim[i]/10;
- clearLevels();if(level)sendEffect(i,level,STARTUP_EFFECT_MS);
+ clearLevels();if(level){sendEffect(i,level,STARTUP_EFFECT_MS);cueChannel=i;cueLevel=level;cueAt=millis();}
  if(!startupStep)event(0,"OK","STARTUP_SEQUENCE");
  testUntil=millis()+STARTUP_EFFECT_MS+TITAN_GUARD_MS;++startupStep;
 }
@@ -222,8 +241,8 @@ void emitTelemetry(uint32_t now){
    for(uint8_t i=0;i<3;i++){
      ChannelTelemetry &c=t.channel[i];c.raw=report.raw[i];c.low=report.lo[i];c.high=report.hi[i];c.meanQ4=q4(report.mean(i));c.amplitudeQ4=q4(amplitude[i]);c.peakQ4=q4(peak[i]);
      c.normalized=(uint16_t)(envelope[i].normalized*1000+0.5f);c.smoothed=(uint16_t)(envelope[i].smoothed*1000+0.5f);c.desired=desired[i];c.sent=sent[i];
-     // Reported floor/close are the effective gate: calibrated noise floor plus the loudness threshold.
-     c.floorQ4=q4(fminf(calibration.floor[i]+threshold,1023));c.referenceQ4=q4(calibration.reference[i]);c.closeQ4=q4(fminf(calibration.close[i]+threshold,1023));
+     // Reported floor/close are the effective gate: noise floor + loudness threshold + the motors' current self-noise allowance.
+     c.floorQ4=q4(fminf(calibration.floor[i]+threshold+gateLift(),1023));c.referenceQ4=q4(calibration.reference[i]);c.closeQ4=q4(fminf(calibration.close[i]+threshold+gateLift(),1023));
    }
    if(eventLength||!queueFrame(1,&t,sizeof(t)))++dropped;else maxOnsetLatency=0;
  }
@@ -235,7 +254,7 @@ void loop(){
  uint16_t a[3];for(uint8_t i=0;i<3;i++){analogRead(A0+i);a[i]=analogRead(A0+i);}
  uint32_t sampledAt=micros();
  if(calibrated&&qualified&&!muted&&!phase&&!saving&&!probeUntil&&!testUntil){
-   for(uint8_t i=0;i<3;i++)if(!envelope[i].open&&!riseAt[i]&&a[i]>calibration.floor[i]+threshold)riseAt[i]=sampledAt;
+   for(uint8_t i=0;i<3;i++)if(!envelope[i].open&&!riseAt[i]&&a[i]>calibration.floor[i]+threshold+gateLift())riseAt[i]=sampledAt;
  }
  window.add(a);report.add(a);++rateSamples;
  processWindow(micros());serviceInput();serviceProbe();serviceSave();serviceStartup();serviceMotors();drain();uint32_t now=micros();

@@ -19,7 +19,7 @@ int main(int argc,char**argv){
  a[0]=20;a[1]=22;a[2]=10;settle(e,a,c);assert(e[1].smoothed>e[0].smoothed&&e[2].smoothed==0);
  float enhancedDifference=e[1].smoothed-e[0].smoothed;
  settle(e,a,c,0);assert(enhancedDifference>e[1].smoothed-e[0].smoothed); // a 2-count difference becomes more apparent
- assert(e[0].smoothed<.2f&&e[1].smoothed<.2f); // quiet sound does not become maximum
+ assert(e[1].smoothed>=dh::MIN_LEVEL&&e[1].smoothed<.5f); // quiet sound is felt but does not become maximum
  a[0]=a[1]=a[2]=970;settle(e,a,c);for(auto &x:e)assert(x.smoothed==1);
  a[0]=a[1]=a[2]=10;dh::process(e,a,c,5000,3,15);for(auto &x:e)assert(x.smoothed==0); // no release tail at floor
  for(auto &x:e)x.clear();a[0]=45;a[1]=a[2]=8;for(int i=0;i<200;i++)dh::process(e,a,c,5000,3,15,40);assert(e[0].smoothed==0); // 35 counts over the floor stays silent under a 40-count threshold
@@ -40,7 +40,7 @@ int main(int argc,char**argv){
  cmd("D3 1 HELLO 0");assert(response("BUSY"));
  run(3000000);assert(titan.commands.size()==2&&titan.commands[1]=="CHNL 3;vibrate 160 1.000 3000 1 0;\r\n"&&!sent[1]&&sent[0]==1000);
  run(3000000);assert(titan.commands.size()==3&&titan.commands[2]=="CHNL 2;vibrate 130 1.000 3000 1 0;\r\n"&&!sent[0]&&sent[2]==1000);
- run(3200000);assert(titan.commands.size()==3&&startupStep==3&&!testUntil&&!sent[0]&&!sent[1]&&!sent[2]&&!testMask);
+ run(3200000);assert(titan.commands.size()==3&&startupStep==4&&!testUntil&&!sent[0]&&!sent[1]&&!sent[2]&&!testMask);
  cmd("D3 1 HELLO 0");assert(response("DIRECTIONAL_HAPTICS"));titan.commands.clear();
  cmd("D3 1 PROFILE 21");assert(profile==21&&muted&&!qualified);
  cmd("D3 2 QUALIFY 1");assert(!qualified);
@@ -68,8 +68,18 @@ int main(int argc,char**argv){
  run(300000);assert(desired[0]==0&&desired[1]==1000&&desired[2]==0);assert(titan.commands.back().find("CHNL 1;")==0);
  source[0]=970;source[1]=9;run(300000);assert(desired[0]==1000&&desired[1]==0&&desired[2]==0);assert(titan.commands.back().find("CHNL 3;")==0);
  source[0]=6;source[2]=970;run(300000);assert(desired[2]==1000&&desired[0]==0&&desired[1]==0);assert(titan.commands.back().find("CHNL 2;")==0);
- source[0]=6;source[2]=9;source[1]=45;run(300000);assert(threshold==40&&desired[0]==0&&desired[1]==0&&desired[2]==0); // room-level sound stays silent
- cmd("D3 8 THRESHOLD 201");assert(threshold==40);cmd("D3 8 THRESHOLD 0");run(300000);assert(desired[1]>0);cmd("D3 8 THRESHOLD 60");run(300000);assert(desired[1]==0);
+ assert(threshold==THRESHOLD_DEFAULT&&THRESHOLD_DEFAULT==10);cmd("D3 8 THRESHOLD 40");source[0]=6;source[2]=9;source[1]=45;run(300000);assert(desired[0]==0&&desired[1]==0&&desired[2]==0); // room-level sound stays silent
+ cmd("D3 8 THRESHOLD 201");assert(threshold==40);cmd("D3 8 THRESHOLD 0");run(900000);assert(desired[1]>0); // long enough to clear the back channel's shutdown-spike guardcmd("D3 8 THRESHOLD 60");run(300000);assert(desired[1]==0);
+ // The power-on cue measures how much each motor adds to the microphones; while a motor plays, every gate rises by 1.5x that.
+ assert(selfGain[1]==SELF_DEFAULT[1]);cmd("D3 8 THRESHOLD 0");source[0]=source[1]=source[2]=30;startupStep=0;run(1500000);assert(sent[1]==1000&&selfNoise==selfGain[1]);
+ {float resting=calibration.floor[1]+threshold;eventLength=0;run(100000);assert(desired[1]==0&&30>resting&&30<resting+SELF_MARGIN*selfNoise);} // 30 counts would open the resting gate, but not while the motor is adding 24
+ run(1700000);float quietAverage=0;for(int i=0;i<3;i++)quietAverage+=(2*calibration.close[i]-calibration.floor[i])/3;
+ assert(fabs(selfGain[1]-(30-quietAverage))<.5f);run(6200000);assert(startupStep==4&&fabs(selfGain[0]-selfGain[1])<.5f&&fabs(selfGain[2]-selfGain[1])<.5f);
+ source[0]=source[1]=source[2]=6;run(400000);assert(selfNoise<.5f&&!desired[0]&&!desired[1]&&!desired[2]);
+ // TITAN's back channel spikes every microphone 1.05 s after it goes idle: a 70-count reading then must not open the gate, but does later.
+ sendEffect(0,1000,40);run(40000+1000000);source[0]=source[1]=source[2]=70;run(200000);assert(gateLift()==POP_COUNTS&&!desired[0]&&!desired[1]&&!desired[2]);
+ source[0]=source[1]=source[2]=6;run(700000);source[1]=70;run(100000);assert(gateLift()<40&&desired[1]>0);source[1]=6;run(300000);
+ cmd("D3 8 THRESHOLD 60");
  source[0]=source[1]=source[2]=1023;size_t count=titan.commands.size();run(300000);assert(desired[0]==1000&&desired[1]==1000&&desired[2]==1000);
  {size_t n=titan.commands.size();assert(n-count>=5&&n-count<=7); // one effect per 50 ms slot, however many motors are active
   std::string x=titan.commands[n-1].substr(0,7),y=titan.commands[n-2].substr(0,7),z=titan.commands[n-3].substr(0,7);assert(x!=y&&y!=z&&x!=z);} // all three in rotation
@@ -81,7 +91,7 @@ int main(int argc,char**argv){
  run(300000);EEPROM.get(512+activeSlot*64,saved);assert(savedValid(saved)&&saved.sensitivity==4&&saved.contrast==20);saved.ceiling^=1;assert(!savedValid(saved));
  calibrated=qualified=false;profile=0;sensitivity=1;contrast=0;threshold=0;loadSaved();assert(threshold==60);EEPROM.data[THRESHOLD_AT+1]^=1;threshold=THRESHOLD_DEFAULT;loadSaved();assert(threshold==THRESHOLD_DEFAULT);EEPROM.data[THRESHOLD_AT+1]^=1;assert(calibrated&&qualified&&profile==21&&sensitivity==4&&contrast==20&&trim[1]==50);
  cmd("D3 17 PROBE 0");run(1400000);assert(!probeUntil&&!titan.listening);
- count=titan.commands.size();startupStep=0;run(100000);assert(muted&&startupStep==3&&titan.commands.size()==count); // a mute cancels a pending power-on cue
+ count=titan.commands.size();startupStep=0;run(100000);assert(muted&&startupStep==4&&titan.commands.size()==count); // a mute cancels a pending power-on cue
  Serial.free=0;auto oldDrop=dropped;run(200000);assert(dropped>oldDrop);Serial.free=63;run(100000);
  eventLength=0;for(char ch:std::string("D3 18 ")+std::string(70,'X')+"\n")Serial.input.push_back(ch);run(100000);assert(!inputOverflow&&!inputLength);
  fakeUs=0xfffff000;previousCycle=windowAt=reportAt=processedAt=rateAt=fakeUs;run(200000);assert(window.n<1000&&report.n<1000);

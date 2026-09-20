@@ -38,6 +38,32 @@
         "8090"
       ],
       "port": 8090
+    },
+    {
+      "name": "demo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8770",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "Demo"
+      ],
+      "port": 8770
+    },
+    {
+      "name": "haptics-dashboard",
+      "runtimeExecutable": "firmware/directional_haptics/.venv/bin/python",
+      "runtimeArgs": [
+        "firmware/directional_haptics/record.py",
+        "--serial",
+        "/dev/cu.usbserial-110",
+        "--port",
+        "8766"
+      ],
+      "port": 8766
     }
   ]
 }

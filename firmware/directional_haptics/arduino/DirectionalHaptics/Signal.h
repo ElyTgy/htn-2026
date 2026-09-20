@@ -5,6 +5,7 @@
 
 namespace dh {
 constexpr float FULL_SCALE_ADC = 970.0f; // ~95% of the Uno's 10-bit ADC range.
+constexpr float MIN_LEVEL = 0.2f;
 inline float clamp(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 struct Window {
@@ -55,7 +56,8 @@ struct Envelope {
   bool open;
   float normalized,corrected,shaped,smoothed;
   void clear() { open=false;normalized=corrected=shaped=smoothed=0; }
-  // margin: loudness threshold in ADC counts above the calibrated noise floor.
+  // margin: ADC counts above the calibrated noise floor: the loudness threshold
+  // plus whatever the motors themselves are currently adding to the microphones.
   // Output is zero up to floor+margin and the range to full scale starts there.
   void measure(float x,const Calibration &c,uint8_t i,uint8_t sensitivity,float margin) {
     float opening=c.floor[i]+margin;
@@ -63,7 +65,8 @@ struct Envelope {
     else if(!open && x>opening) open=true;
     normalized=open ? normalize(x,opening,c.reference[i]) : 0;
     corrected=normalized>0 ? (x-opening)*c.gain[i] : 0;
-    shaped=shape(normalized,sensitivity);
+    // An open microphone starts at MIN_LEVEL: a quieter pulse is not felt.
+    shaped=normalized>0 ? MIN_LEVEL+(1-MIN_LEVEL)*shape(normalized,sensitivity) : 0;
   }
   void smooth(float target,uint32_t dt) {
     // Hard silence gate. Release smoothing applies while above the floor;
@@ -75,10 +78,10 @@ struct Envelope {
   }
 };
 inline void process(Envelope e[3],const float amplitudes[3],const Calibration &c,
-                    uint32_t dt,uint8_t sensitivity,uint8_t contrastTenths,uint8_t thresholdCounts=0) {
+                    uint32_t dt,uint8_t sensitivity,uint8_t contrastTenths,float margin=0) {
   float loudest=0;
   for(uint8_t i=0;i<3;i++) {
-    e[i].measure(amplitudes[i],c,i,sensitivity,thresholdCounts);
+    e[i].measure(amplitudes[i],c,i,sensitivity,margin);
     if(e[i].corrected>loudest) loudest=e[i].corrected;
   }
   for(uint8_t i=0;i<3;i++) {

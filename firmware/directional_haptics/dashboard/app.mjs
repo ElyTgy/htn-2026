@@ -15,6 +15,7 @@ for(let i=0;i<3;i++){
   apart.innerHTML=`<h3 style="color:${colors[i]}">A${i} · ${names[i]}</h3><canvas id="apartPlot${i}" role="img" aria-label="A${i} ${names[i]} on the same scale as the other two graphs"></canvas>`;
   $('apartPlots').append(apart);
 }
+for(const i of [1,0,2]){const card=document.createElement('div');card.innerHTML=`<h3 style="color:${colors[i]}">${names[i].split(' · ')[0]} mic · A${i}</h3><canvas id="decisionPlot${i}" role="img" aria-label="A${i} envelope against the firmware's gate levels"></canvas><p id="decisionText${i}" class="small">Waiting for readings</p>`;$('decisionPlots').append(card);}
 const selectedParameter=new URL(location.href).searchParams.get('sensor');
 if(['0','1','2'].includes(selectedParameter))$('viewSensor').value=selectedParameter;
 function setView(){
@@ -98,7 +99,7 @@ $('observed').onchange=()=>{if(state)updateState(state);};
 for(const button of document.querySelectorAll('[data-trim]'))button.onclick=()=>{const i=button.dataset.trim;if($('trim'+i).reportValidity())firmwareCommand('TRIM'+i,Number($('trim'+i).value));};
 function mark(){const label=$('eventLabel').value.trim()||`Event ${(state?.events.filter(e=>e.type==='marker').length||0)+1}`;command('mark',{label});$('eventLabel').value='';}
 $('mark').onclick=mark;$('eventLabel').onkeydown=e=>{if(e.key==='Enter'&&!$('mark').disabled)mark();};
-function plot(canvas,series,{band=null,fixedZero=false,bounds=null,displayRange=null}={}){
+function plot(canvas,series,{band=null,fixedZero=false,bounds=null,displayRange=null,lines=[],shade=null,strip=null}={}){
   const {width:w,height:h}=canvas.getBoundingClientRect();if(!w||!h)return;
   const dpr=Math.min(2,devicePixelRatio||1);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
   const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);
@@ -110,11 +111,36 @@ function plot(canvas,series,{band=null,fixedZero=false,bounds=null,displayRange=
   for(let i=0;i<5;i++){const value=low+(high-low)*i/4,yy=y(value);c.strokeStyle='#e0e8ee';c.beginPath();c.moveTo(left,yy);c.lineTo(right,yy);c.stroke();c.fillStyle='#526d7c';c.fillText(value.toFixed(high-low<20?1:0),2,yy+3);}
   c.fillText('−30 s',left,h-6);c.fillText('now',right-24,h-6);if(!history.length)return;
   c.save();c.beginPath();c.rect(left,top,right-left,bottom-top);c.clip();
+  for(const mark of [shade&&{...shade,y0:top,y1:bottom},strip&&{...strip,y0:bottom-7,y1:bottom}]){if(!mark)continue;c.fillStyle=mark.color;let from=null,previous=null;const flush=()=>{if(from)c.fillRect(x(from)-2,mark.y0,Math.max(3,x(previous)-x(from)+4),mark.y1-mark.y0);from=null;};for(const t of history){if(mark.test(t)){if(!from)from=t;previous=t;}else flush();}flush();}
   if(band){c.fillStyle=band.color+'29';let segment=[];const fill=()=>{if(!segment.length)return;c.beginPath();segment.forEach((t,i)=>i?c.lineTo(x(t),y(t.channels[band.index].max)):c.moveTo(x(t),y(t.channels[band.index].max)));[...segment].reverse().forEach(t=>c.lineTo(x(t),y(t.channels[band.index].min)));c.closePath();c.fill();segment=[];};for(const t of history){if(segment.length&&t.elapsed_s-segment.at(-1).elapsed_s>.25)fill();segment.push(t);}fill();}
-  for(const s of series){c.strokeStyle=s.color;c.lineWidth=2;c.setLineDash([]);c.beginPath();let previous=null;for(const t of history){if(!previous||t.elapsed_s-previous.elapsed_s>.25||t.stream_epoch!==previous.stream_epoch)c.moveTo(x(t),y(s.value(t)));else c.lineTo(x(t),y(s.value(t)));previous=t;}c.stroke();}
+  for(const s of series){c.strokeStyle=s.color;c.lineWidth=s.width||2;c.setLineDash(s.dash||[]);c.beginPath();let previous=null;for(const t of history){if(!previous||t.elapsed_s-previous.elapsed_s>.25||t.stream_epoch!==previous.stream_epoch)c.moveTo(x(t),y(s.value(t)));else c.lineTo(x(t),y(s.value(t)));previous=t;}c.stroke();}
+  for(const line of lines){if(line.value<low||line.value>high)continue;c.strokeStyle=line.color;c.lineWidth=1.5;c.setLineDash([6,4]);c.beginPath();c.moveTo(left,y(line.value));c.lineTo(right,y(line.value));c.stroke();c.setLineDash([]);c.fillStyle=line.color;c.fillText(`${line.label} ${line.value.toFixed(1)}`,left+4,y(line.value)-3);}
   c.strokeStyle='#6c7e8e';c.lineWidth=1;c.setLineDash([3,4]);
   for(const e of state?.events||[]){if(e.type!=='marker'||e.elapsed_s<last-30||e.elapsed_s>last)continue;const xx=x(e);c.beginPath();c.moveTo(xx,top);c.lineTo(xx,bottom);c.stroke();}
   c.restore();
+}
+const gammas={1:.8,2:.6,3:.4,4:.3,5:.2};
+function renderDecision(latest){
+  const fw=state.firmware,settings=state.settings;if(!fw||!settings)return;
+  const threshold=settings.threshold??0,gamma=gammas[settings.sensitivity];
+  $('pipeline').innerHTML=!fw.calibrated?'<li>No calibration saved: every motor request is 0 until a quiet calibration is run.</li>':`
+   <li>Every 5 ms the Uno averages each microphone's ENVELOPE pin (A0 back, A1 left, A2 right).</li>
+   <li><b>Gate.</b> A mic opens when that average rises above its calibrated noise floor + the loudness threshold, now <b>${threshold} counts</b>. It closes again below the lower close level. While closed its motor request is exactly 0%.</li>
+   <li><b>Motor self-noise.</b> The motors reach the microphones. The power-on sequence measures how much each motor adds when it plays alone; while a motor pulses, every gate lifts by 1.5 × that amount (the dashed green line), then settles back within about 0.1 s. TITAN's back channel also spikes every mic by about 70 counts 1.05 s after it goes idle, so the gate lifts by 100 across that moment.</li>
+   <li><b>Loudness.</b> While open, x = (reading − gate) ÷ (970 − gate), then 20% + 80% × x<sup>${gamma}</sup> (sensitivity <b>${settings.sensitivity}</b> of 5), so the faintest response is still a 20% pulse.</li>
+   <li><b>Direction.</b> Quieter mics are multiplied by (their excess ÷ the loudest excess)<sup>${(settings.contrast/10).toFixed(1)} × (1 − x)²</sup> (contrast <b>${settings.contrast}</b>). The exponent shrinks toward 0 for loud sounds.</li>
+   <li>Smoothing: 5 ms up, 50 ms down. Then × ceiling <b>${fw.ceiling}%</b> × that motor's trim = the requested %.</li>
+   <li>TITAN plays one effect at a time: every 50 ms one 40 ms pulse goes to the next motor in rotation that is asking. ${fw.muted?'<b>Output is muted.</b>':!fw.qualified?'<b>TITAN setup is not qualified, so requests stay 0.</b>':''}</li>`;
+  const anyMotor=t=>t.channels.some(c=>c.sent>0);
+  for(let i=0;i<3;i++){
+    const c=latest.channels[i],open=c.floor,resting=Math.min(...history.map(t=>t.channels[i].floor)),lift=open-resting,close=c.close-lift,floor=resting-threshold,quiet=Math.max(0,2*(close-threshold)-floor);
+    const recent=history.filter(t=>latest.elapsed_s-t.elapsed_s<=10).map(t=>t.channels[i].peak),peak10=Math.max(...recent),top=Math.max(open*1.5,Math.min(peak10*1.15,open*4));
+    plot($('decisionPlot'+i),[{color:'#2f8a4a',width:1.5,dash:[6,4],value:t=>t.channels[i].floor},{color:'#183344',value:t=>t.channels[i].peak}],{displayRange:[0,top],shade:{color:'#2f8a4a33',test:t=>t.channels[i].desired>0},strip:{color:'#d2571f',test:anyMotor},
+      lines:[{value:quiet,color:'#b9c4cc',label:'quiet'},{value:floor,color:'#8a99a5',label:'noise floor'},{value:close,color:'#c08a1a',label:'closes'},{value:resting,color:'#2f8a4a',label:'resting gate'}]});
+    const x=Math.max(0,(c.peak-open)/(970-open)),isOpen=c.normalized>0||c.desired>0;
+    const verdict=isOpen?`<span class="verdict open">OPEN</span> · ${(c.peak-open).toFixed(1)} counts over the gate → ${c.normalized.toFixed(1)}% of the range → curve and contrast → ${c.smoothed.toFixed(1)}% → requested <b>${c.desired.toFixed(1)}%</b>`:`<span class="verdict closed">CLOSED</span> · ${(open-c.peak).toFixed(1)} counts short of the gate → requested 0%`;
+    $('decisionText'+i).innerHTML=`Now <b>${c.peak.toFixed(1)}</b> counts (quiet ≈ ${quiet.toFixed(1)}, noise floor ${floor.toFixed(1)}, gate ${open.toFixed(1)}${lift>.5?` = resting ${resting.toFixed(1)} + ${lift.toFixed(1)} for motor self-noise`:''}). ${verdict}.<br>Loudest in the last 10 s: <b>${peak10.toFixed(1)}</b> counts, ${peak10>open?'which opened the gate.':`${(open-peak10).toFixed(1)} short. With the motors silent it would have opened with a threshold of ${Math.max(0,Math.floor(peak10-floor-.01))} or less.`}`;
+  }
 }
 function render(){
   if(!state)return;
@@ -136,6 +162,7 @@ function render(){
   if(selected==='apart')for(let i=0;i<3;i++)plot($('apartPlot'+i),[series[i]],{displayRange});
   else plot($('comparePlot'),series,{displayRange});
   const latest=history.at(-1);if(!latest)return;
+  renderDecision(latest);
   $('timing').textContent=(isDemo?'SIMULATED timing · ':'')+`${latest.rate.toLocaleString()} samples/s per sensor · ${latest.samples} samples each / ${(latest.window_us/1000).toFixed(2)} ms · largest sampling gap ${(latest.gap_us/1000).toFixed(2)} ms · ${latest.dropped} telemetry reports dropped · UART ${(latest.tx_us/1000).toFixed(2)} ms · ${latest.update_rate} motor commands/s total${latest.onset_latency_us?` · gate crossing to command complete ${(latest.onset_latency_us/1000).toFixed(2)} ms`:''}`;
   for(let i=0;i<3;i++){
     const channel=latest.channels[i];$('raw'+i).textContent=channel.raw;$('volts'+i).textContent=`≈ ${(channel.raw*5/1024).toFixed(3)} V at a 5 V reference`;

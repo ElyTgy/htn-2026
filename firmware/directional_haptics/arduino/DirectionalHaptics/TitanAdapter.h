@@ -25,6 +25,18 @@ inline int titanEffect(char*out,unsigned cap,uint8_t profile,uint8_t adc,uint16_
 static const uint16_t TITAN_EFFECT_MS=40;
 static const uint32_t TITAN_SLOT_US=50000UL;
 static const uint16_t TITAN_TEST_MS=1000;
+// The motors reach the microphones. Measured 2026-09-20 with each motor alone at
+// 100%: all three microphones read about 24 counts over quiet for left, 14 for
+// back, 3 for right. The power-on cue re-measures this at every boot. While a
+// motor plays, every gate rises by SELF_MARGIN x that motor's share, so the
+// motors cannot re-trigger themselves and the resting gate can stay low.
+static const float SELF_DEFAULT[3]={14,24,3}; // A0 back, A1 left, A2 right; counts at 100%
+// TITAN's M (back) channel also upsets the microphones when it shuts down: 1.05 s
+// after its last effect ends, all three read a spike of about 70 counts that
+// fades within 0.3 s (3 of 3 trials; never after L or R). With a low gate that
+// spike re-opened the gate every 1.15 s, so the gate is lifted across it.
+static const uint16_t POP_FROM_MS=850,POP_UNTIL_MS=1450;static const float POP_COUNTS=100;
+static const float SELF_MAX=80,SELF_MARGIN=1.5f,SELF_RELEASE_US=60000.0f;
 static const uint16_t TITAN_SLICED_TEST_MS=2000; // TEST 4: all three in rotation
 static const uint16_t TITAN_GUARD_MS=25;         // after a long effect, before the next command
 // Power-on cue: left, back, right, one finite effect each, starting after the
