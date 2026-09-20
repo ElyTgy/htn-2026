@@ -2,6 +2,8 @@
 
 Three SparkFun SEN-12642 ENVELOPE signals drive left, right and back DRAKE motors through an Arduino Uno and TITAN Core. The Uno owns sensing, calibration and intensity mapping. The computer only displays and records diagnostics. Existing `firmware/sound_sensors` and previous comparison tests are separate.
 
+See [microphone and motor maximums](docs/MAXIMUMS.md) for the exact A0/A1/A2 full-output point, motor channels, command frequencies, 100% command strings, and the observed difference in sensation between the red, yellow, and white motors.
+
 **Bench candidate:** the Uno build and host tests pass. Rev 3 has not yet been flashed or physically qualified. The stock TITAN adapter's repeated short effects, independent overlap, stopping and latency still need bench validation. See [the test record](docs/TEST_RECORD.md) before enabling output.
 
 ## Wiring
