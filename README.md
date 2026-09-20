@@ -3,7 +3,7 @@
 Live captions floating above whoever is speaking, seen through XREAL One glasses.
 
 ```
-Raspberry Pi 5 + Pi camera (on your head)          Beam Pro (Chrome, fullscreen black page)
+Pi 5 + Pi camera, or Jetson + CSI/USB camera       Beam Pro (Chrome, fullscreen black page)
   camera → faces → who is moving their lips   ──►    mic → Deepgram → words with timestamps
   serves the page + streams face data (WebSocket)    matches words to the face that was talking
                                                      draws the caption above that face
@@ -15,14 +15,15 @@ The camera decides **who** is speaking (lip movement, backed up by the transcrip
 voice labels). The Beam Pro's browser does the **what** (speech to text). Speech with no matching
 face on camera (you, or someone out of view) goes to a bar at the bottom.
 
-Built at Hack the North 2026. Phase 1 (this repo) is captions; phase 2 is haptic motors around the
-head that buzz in the direction of sound.
+Built at Hack the North 2026. Captions are the primary system. The Jetson build also includes the
+coarse two-sensor directional haptic path; it is intentionally separate from transcription audio.
 
-**Just want it running?** [docs/SETUP.md](docs/SETUP.md) is the short runbook: the laptop (debug)
-link, the glasses link, calibration, and what to check when captions don't show up.
+**Just want it running?** [docs/SETUP.md](docs/SETUP.md) is the Raspberry Pi runbook. The parallel
+Jetson build, including camera, Arduino sensors, TITAN haptics, wiring, firmware, and staged tests, is
+in [docs/JETSON_SETUP.md](docs/JETSON_SETUP.md).
 
 **Contents:** [Quick start](#1-try-it-on-a-laptop-first-no-pi-no-glasses) ·
-[Pi setup](#2-raspberry-pi-5-setup) · [Beam Pro](#4-on-the-beam-pro) ·
+[Pi setup](#2-raspberry-pi-5-setup) · [Jetson setup](#2b-jetson-orin-nano-8-gb-setup) · [Beam Pro](#4-on-the-beam-pro) ·
 [How it works](#how-it-works) · [Two people talking](#two-people-talking) ·
 [Transcription options](#transcription-options) · [Mic arrays and audio-visual fusion](#mic-arrays-and-audio-visual-fusion-rev-2) ·
 [Hardware notes](#hardware-notes) · [Tuning](#tuning-piconfigpy-webattributionjs) · [Known limits](#known-limits)
@@ -70,6 +71,23 @@ The terminal shows frames per second; aim for 15 or more. If it's low, try `--wi
 The face model downloads itself on first run (needs internet once).
 If the camera is mounted sideways, tick "Camera is sideways" in the page's Settings; the Pi
 remembers it in `settings.json`. Check the result at `http://<pi>:8080/video`.
+
+## 2b. Jetson Orin Nano 8 GB setup
+
+The Jetson is a parallel host, not a replacement for the Pi files. It uses the same `pi/main.py` and
+web page with a Jetson CSI or USB camera source, plus a separate Arduino-to-TITAN bridge for coarse
+directional haptics.
+
+```bash
+sh scripts/jetson_check.sh
+sh scripts/jetson_install.sh
+```
+
+For an isolated camera + browser-microphone test with no API key or extra electronics, run
+`sh scripts/jetson_video_mic_test.sh csi` and open the HTTPS URL it prints.
+
+Do not wire from the old Pi pin numbers: the Jetson developer kit has different power and UART rules.
+Follow the complete [Jetson wiring, firmware, calibration, and test runbook](docs/JETSON_SETUP.md).
 
 ## 3. Deepgram key
 
@@ -305,11 +323,12 @@ What this was built with, and what we learned about it:
   "sound sensor" modules can't feed it audio.
 - **Sound sensor modules + Arduino** (from the hackathon kit). They output a rough loudness signal, not
   clean audio, and an Arduino can't sample several channels fast enough or at the same instant. No good
-  for transcription, beamforming or timing-based direction. Four of them facing outward around the head,
-  compared by loudness (the head shadows the far side), give a coarse four-sector direction: enough for
-  phase 2 haptics with four motors, reliable for loud or nearby sounds, flaky for quiet speech across a room.
-- **Jetson Orin Nano + Luxonis OAK-1.** Parked for now; see [docs/PORTING.md](docs/PORTING.md). The OAK-1
-  is video only (no mic) and connects over USB to either board.
+  for transcription, beamforming or timing-based direction. The Jetson build independently calibrates
+  one SEN-12642 and one KY-038 for coarse left/right loudness: useful for loud nearby alerts, unreliable
+  for quiet speech or precise direction. A future matched, synchronised array is the real solution.
+- **Jetson Orin Nano.** A parallel CSI/USB-camera build is implemented, with separate Arduino sound
+  sensing and TITAN haptic services. See [docs/JETSON_SETUP.md](docs/JETSON_SETUP.md). OAK-1 remains
+  a future video-only source; see [docs/PORTING.md](docs/PORTING.md).
 - **mediapipe is pinned to 0.10.18:** 1.0.1 crashes on macOS at startup, and 0.10.21 has no Raspberry Pi build.
 
 ## Tuning (pi/config.py, web/attribution.js)
@@ -326,6 +345,8 @@ What this was built with, and what we learned about it:
 
 ```bash
 node --test tests/attribution.test.mjs
+python3 tests/test_hardware_bridge.py
+python3 tests/test_jetson_camera.py
 ```
 
 ## Known limits
@@ -334,4 +355,5 @@ node --test tests/attribution.test.mjs
 - Text trails speech by roughly half a second to a second.
 - Tell people you're transcribing them.
 
-Phase 2 (haptics) and the Jetson + OAK-1 port: see [docs/PORTING.md](docs/PORTING.md).
+Jetson wiring and haptics: [docs/JETSON_SETUP.md](docs/JETSON_SETUP.md). Other ports:
+[docs/PORTING.md](docs/PORTING.md).

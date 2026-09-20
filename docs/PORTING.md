@@ -1,68 +1,45 @@
-# Porting to Jetson Orin Nano and/or the OAK-1
+# Alternate vision hosts and cameras
 
-The code has two seams. Everything after them (tracking, speaking detection, server, the whole web
-page) is shared and does not change.
+The code has two seams. Everything after them (tracking, speaking detection, server, and browser page)
+is shared.
 
 | Seam | File | What it abstracts |
 |---|---|---|
-| `FrameSource` | `pi/sources/base.py` | Just the camera: returns RGB frames |
-| `VisionBackend` | `pi/backends/base.py` | Camera **and** face analysis: returns `Detection(x, y, w, h, mouth_open)` per face |
+| `FrameSource` | `pi/sources/base.py` | camera frames as RGB arrays |
+| `VisionBackend` | `pi/backends/base.py` | face boxes, landmarks, and mouth opening |
 
-## A. Jetson with a USB or CSI camera (easiest)
+## Jetson Orin Nano
 
-Nothing to write. Same MediaPipe backend, different source:
+The implemented Jetson build includes:
 
-```bash
-python3 -m venv .venv && .venv/bin/pip install -r pi/requirements.txt
-# USB webcam
-.venv/bin/python pi/main.py --backend mediapipe --source opencv --source-arg 0
-# CSI camera (IMX219 / IMX477) through GStreamer
-.venv/bin/python pi/main.py --backend mediapipe --source opencv --source-arg \
-  "nvarguscamerasrc ! video/x-raw(memory:NVMM),width=1280,height=720,framerate=30/1 ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! video/x-raw,format=BGR ! appsink drop=1"
-```
+- `pi/sources/jetson_csi_source.py`: bounded-latency Argus/GStreamer CSI capture with sensor-id 0/1 probing;
+- the existing OpenCV source for a UVC USB camera;
+- `scripts/jetson_*`: inventory, installation, launch, and boot services;
+- `firmware/sound_sensors`: the two-analog-sensor Arduino firmware; and
+- `jetson/hardware_bridge.py`: calibration, coarse left/right decisions, and TITAN L/R/M commands.
 
-Notes: JetPack 6 has Python 3.10, which `mediapipe==0.10.18` supports. The GStreamer string needs an
-OpenCV built with GStreamer (JetPack's system OpenCV is; the pip wheel is not, so for CSI cameras
-create the venv with `--system-site-packages` and remove `opencv-python-headless` from requirements).
+See [JETSON_SETUP.md](JETSON_SETUP.md) for the complete wiring and acceptance test. The old one-line
+GStreamer recipe was not a full port: a pip OpenCV wheel lacks JetPack's GStreamer integration, and
+the Jetson host also needs an explicit sound/haptic transport.
 
-## B. OAK-1 as a plain camera (easy)
+## OAK-1 as a plain camera
 
-Keeps MediaPipe on the host; the OAK is just a good USB camera.
+This remains a future option. Keep MediaPipe on the host and implement `FrameSource` with DepthAI:
 
-1. `pip install depthai`, then add the udev rule:
-   `echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules && sudo udevadm control --reload-rules && sudo udevadm trigger`
-2. Add `pi/sources/oak_source.py` implementing `FrameSource`: build a depthai pipeline with a colour
-   camera and one preview output (1280x720 RGB), and in `read()` return `(queue.get().getCvFrame()[..., ::-1], time.monotonic())`.
-3. Register it in `pi/sources/__init__.py`, run with `--source oak`.
+1. Install `depthai` and its udev rule.
+2. Build a colour-camera preview pipeline at 1280x720.
+3. Return `(rgb_frame, time.monotonic())` from `read()`.
+4. Register `--source oak` in `pi/sources/__init__.py`.
 
-Use a USB 3 port and cable; if it drops out, the port isn't supplying enough power (powered hub or Y-cable).
+## OAK-1 doing vision on-camera
 
-## C. OAK-1 doing the vision on-camera (most work, frees the host)
+`pi/backends/oak_backend.py` is an untested skeleton. It needs a face detector, per-face crops, a
+landmark model with inner-lip points, and a conversion to the shared `Detection` shape. Keep
+`mouth_open` as inner-lip gap divided by face height or retune the thresholds in `pi/config.py`.
 
-Worth it only if the host is weak (Pi 3/4) or busy (Jetson running Whisper). Fill in
-`pi/backends/oak_backend.py` (currently an untested skeleton):
+## On-device speech-to-text
 
-1. Pipeline: colour camera → face detector NN (e.g. `face-detection-retail-0004` or YuNet from the
-   Luxonis model zoo) → per-face crop (`ImageManip`) → a landmarks NN that includes inner-lip points
-   (a MediaPipe face-mesh blob from the zoo) → XLink outputs.
-2. In `read()`: convert each face to a `Detection`. `mouth_open` must use the same definition as
-   `mediapipe_backend.py` (inner-lip gap ÷ forehead-to-chin distance) or the thresholds in `config.py` need retuning.
-3. Run with `--backend oak`. Set `latest_frame()` from a low-res preview stream so `/video` still works.
-
-## D. On-device speech-to-text on the Jetson (no internet)
-
-The page only needs the normalised transcript event described in `web/stt/provider.js`, so:
-
-1. Add a WebSocket endpoint on the Jetson (e.g. `/stt-audio`) that receives the page's MediaRecorder
-   chunks, decodes them (ffmpeg → 16 kHz PCM) and feeds faster-whisper / whisper.cpp in short windows.
-2. Add `web/stt/local.js`: same shape as `deepgram.js`, but the socket points at `/stt-audio` and the
-   server replies with `{text, isFinal, start, end, words?}` which the provider offsets by `t0`.
-3. Whisper gives no speaker labels, so attribution runs on lips only. Everything else is unchanged.
-
-## Phase 2: haptics
-
-The vision loop in `pi/main.py` already knows each face's horizontal position and who is speaking.
-Add a small module that maps the active speaker's `x + w/2` to a blend between the front-left and
-front-right motors (PWM through transistors), and pulses the back motors when the page reports speech
-with no visible speaker (send that back over the existing WebSocket). If the 4 sound sensor modules +
-Arduino are added, read its sector over USB serial and let it choose the side for off-camera sounds.
+The Jetson port keeps the existing browser-to-cloud transcription path. Local STT is a separate
+feature: add a WebSocket audio endpoint, decode to 16 kHz PCM, run a streaming model, and return the
+normalised transcript event documented in `web/stt/provider.js`. Whisper-style output has no live
+speaker labels, so attribution then relies on lip movement alone.

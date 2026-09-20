@@ -8,6 +8,9 @@ def make_source(name: str, arg: str, cfg) -> FrameSource:
     elif name == "opencv":
         from .opencv_source import OpenCvSource
         source = OpenCvSource(arg, cfg)
+    elif name == "jetson-csi":
+        from .jetson_csi_source import JetsonCsiSource
+        source = JetsonCsiSource(arg, cfg)
     else:
         raise ValueError(f"unknown source: {name}")
     from .rotate import RotatedSource

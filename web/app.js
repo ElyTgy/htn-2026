@@ -6,6 +6,7 @@ import { openMic, closeMic, listMics } from './stt/mic.js';
 import './stt/deepgram.js';
 import './stt/speechmatics.js';
 import './stt/mock.js';
+import './stt/mic-test.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);

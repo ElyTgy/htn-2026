@@ -4,6 +4,7 @@ Examples
   python pi/main.py --backend fake                                # no camera, synthetic faces
   python pi/main.py --backend mediapipe --source opencv           # laptop / USB webcam
   python pi/main.py --backend mediapipe --source picamera2        # Raspberry Pi camera
+  python pi/main.py --backend mediapipe --source jetson-csi       # Jetson CSI camera
 """
 import argparse
 import sys
@@ -79,8 +80,11 @@ def vision_loop(cfg, backend, server, stop, remember_faces=True):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--backend", choices=["mediapipe", "fake", "oak"], default="mediapipe")
-    p.add_argument("--source", choices=["picamera2", "opencv"], default="picamera2")
-    p.add_argument("--source-arg", default="", help="camera index, video file or GStreamer string (opencv source)")
+    p.add_argument("--source", choices=["picamera2", "opencv", "jetson-csi"], default="picamera2")
+    p.add_argument("--source-arg", default="", help=(
+        "camera index, video file or GStreamer string (opencv), or Jetson CSI sensor id; "
+        "leave empty to try sensor ids 0 and 1"
+    ))
     p.add_argument("--port", type=int, default=8080)
     p.add_argument("--https", action="store_true", help="serve over HTTPS with certs/cert.pem (scripts/make_cert.sh)")
     p.add_argument("--width", type=int, default=1280)

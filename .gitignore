@@ -4,3 +4,5 @@ certs/
 models/
 __pycache__/
 settings.json
+jetson/sound_calibration.json
+.run/
