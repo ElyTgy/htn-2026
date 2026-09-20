@@ -40,7 +40,20 @@ class Tracker:
             used_tracks.add(tid)
             used_dets.add(di)
             tr = self.tracks[tid]
-            tr.det, tr.last_seen = detections[di], ts
+            current = tr.det
+            incoming = detections[di]
+            a = self.cfg.track_smoothing
+            # Stabilize geometry only. Mouth movement and identity keypoints must remain from
+            # the current frame or temporal smoothing would suppress speech and blur identity.
+            tr.det = Detection(
+                x=current.x + (incoming.x - current.x) * a,
+                y=current.y + (incoming.y - current.y) * a,
+                w=current.w + (incoming.w - current.w) * a,
+                h=current.h + (incoming.h - current.h) * a,
+                mouth_open=incoming.mouth_open,
+                keypoints=incoming.keypoints,
+            )
+            tr.last_seen = ts
             seen.append(tr)
 
         for di, d in enumerate(detections):
@@ -48,6 +61,13 @@ class Tracker:
                 tr = Track(self._next_id, d, ts)
                 self._next_id += 1
                 self.tracks[tr.id] = tr
+                used_tracks.add(tr.id)
+                seen.append(tr)
+
+        # MediaPipe can miss an occluded face for a few frames. Keep the last stable geometry
+        # available so boxes and person-owned captions do not blink or fall off the person.
+        for tid, tr in self.tracks.items():
+            if tid not in used_tracks and ts - tr.last_seen <= self.cfg.track_bridge_age:
                 seen.append(tr)
 
         for tid in [t for t, tr in self.tracks.items() if ts - tr.last_seen > self.cfg.track_max_age]:

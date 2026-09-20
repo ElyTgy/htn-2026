@@ -30,7 +30,7 @@ purgeLegacyClientState();
 const COLOURS = ['#ffe14d', '#5ef0ff', '#7dff8a', '#ff9df0', '#ffb36b'];
 const CAPTION_HOLD_MS = 2500;   // old words disappear quickly; this is a live aid, not a transcript
 const FINAL_KEEP_MS = 3500;
-const MAX_TRANSCRIPT_AGE_MS = 2000; // never display a result that arrived seconds after its audio
+const MAX_TRANSCRIPT_AGE_MS = 8000; // reject replays, not valid Enhanced-model finalization latency
 const FACE_GONE_MS = 1000;
 const SMOOTH = 0.35;
 

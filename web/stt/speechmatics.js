@@ -6,7 +6,7 @@ export const TRANSCRIPTION_CONFIG = {
 };
 
 // Normalize punctuation and unknown speakers before the shared attribution code sees them.
-export function normalizeTranscript(msg, t0) {
+export function normalizeTranscript(msg, t0, receivedAt = performance.now()) {
   if (!['AddTranscript', 'AddPartialTranscript'].includes(msg.message)) return null;
   const words = [];
   for (const result of msg.results || []) {
@@ -23,11 +23,16 @@ export function normalizeTranscript(msg, t0) {
       });
     }
   }
+  // Speechmatics partials do not consistently include metadata start/end times. Falling back
+  // to zero made every partial look older as the session continued, until the UI discarded all
+  // captions. Word timings are authoritative; only an empty partial uses its arrival time.
+  const timedStart = words.length ? words[0].startMs : receivedAt;
+  const timedEnd = words.length ? words[words.length - 1].endMs : receivedAt;
   return {
     text: msg.metadata?.transcript || words.map(w => w.text).join(' '),
     isFinal: msg.message === 'AddTranscript',
-    startMs: t0 + (msg.metadata?.start_time ?? 0) * 1000,
-    endMs: t0 + (msg.metadata?.end_time ?? 0) * 1000,
+    startMs: msg.metadata?.start_time == null ? timedStart : t0 + msg.metadata.start_time * 1000,
+    endMs: msg.metadata?.end_time == null ? timedEnd : t0 + msg.metadata.end_time * 1000,
     words,
   };
 }
@@ -90,7 +95,7 @@ function create({ onTranscript, onStatus, onSessionStart = () => {} }) {
               } else if (msg.message === 'Error') {
                 throw new Error(`Speechmatics ${msg.type}: ${msg.reason || 'request failed'}`);
               } else if (t0 !== null) {
-                const event = normalizeTranscript(msg, t0);
+                const event = normalizeTranscript(msg, t0, performance.now());
                 if (event) onTranscript(event);
               }
             } catch (e) {

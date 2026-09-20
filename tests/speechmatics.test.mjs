@@ -30,9 +30,21 @@ test('word clocks, punctuation and speaker changes survive normalization', () =>
 
 test('empty partials clear provisional captions and control messages are ignored', () => {
   assert.equal(normalizeTranscript({ message: 'AudioAdded' }, 100), null);
-  const event = normalizeTranscript({ message: 'AddPartialTranscript', results: [] }, 100);
+  const event = normalizeTranscript({ message: 'AddPartialTranscript', results: [] }, 100, 9000);
   assert.equal(event.text, '');
   assert.equal(event.isFinal, false);
+  assert.equal(event.startMs, 9000);
+  assert.equal(event.endMs, 9000);
+});
+
+test('partials without metadata use word clocks instead of session start', () => {
+  const event = normalizeTranscript({
+    message: 'AddPartialTranscript',
+    results: [word('still', 'S1', 40.1, 40.4), word('live', 'S1', 40.4, 40.8)],
+  }, 1000, 42100);
+  assert.equal(event.startMs, 41100);
+  assert.equal(event.endMs, 41800);
+  assert.equal(42100 - event.endMs, 300);
 });
 
 test('worklet batches audio and averages channels without audible output', () => {

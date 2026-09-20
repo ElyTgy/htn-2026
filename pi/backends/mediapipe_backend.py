@@ -64,9 +64,11 @@ class MediaPipeBackend:
             ),
             running_mode=vision.RunningMode.VIDEO,
             num_faces=self.cfg.max_faces,
-            min_face_detection_confidence=0.5,
-            min_face_presence_confidence=0.5,
-            min_tracking_confidence=0.5,
+            # Hats, glasses, partial profiles, and the wider camera view all weaken model
+            # confidence. Accept plausible faces here; temporal tracking rejects one-frame noise.
+            min_face_detection_confidence=0.25,
+            min_face_presence_confidence=0.20,
+            min_tracking_confidence=0.20,
         )
         self._landmarker = vision.FaceLandmarker.create_from_options(options)
         self.source.start()

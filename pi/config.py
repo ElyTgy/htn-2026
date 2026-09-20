@@ -53,6 +53,8 @@ class Config:
     # Tracker
     track_max_dist: float = 0.15   # max centre jump (fraction of frame width) to keep the same ID
     track_max_age: float = 2.0     # seconds a track survives without a detection
+    track_bridge_age: float = 0.25 # keep a face visible through brief detector misses
+    track_smoothing: float = 0.55  # new-frame weight for stable boxes; mouth signal stays unsmoothed
 
     # Remembering people across tracking dropouts (identity.py)
     identity_threshold: float = 0.363   # cosine similarity to count as the same person (SFace's
