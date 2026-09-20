@@ -2,6 +2,13 @@
 
 Live captions floating above whoever is speaking, seen through XREAL One glasses.
 
+**XREAL environmental audio:** [phone microphone selection and Jetson YAMNet setup](docs/YAMNET.md).
+
+**Current hardware setup:** OAK-1 → Jetson Orin Nano 8 GB → AR client, alongside independent
+SEN-12642 + KY-038 → Arduino Uno → TITAN → three motors. See
+[current architecture and implementation status](docs/CURRENT_ARCHITECTURE.md) for wiring and
+the remaining software changes. The setup instructions below also cover the earlier builds.
+
 ```
 Pi 5 + Pi camera, or Jetson + OAK/CSI/USB camera   Beam Pro (Chrome, fullscreen live video)
   camera → faces → who is moving their lips   ──►    mic → Speechmatics → timestamped words

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XREAL microphone test</title>
+  <style>
+    body { background: #111; color: #eee; font: 17px system-ui; max-width: 650px; margin: 32px auto; padding: 16px; }
+    button, select { font: inherit; padding: 12px; margin: 8px 0; max-width: 100%; }
+    label { display: block; }
+    #sound-results { color: #ffe14d; line-height: 1.8; }
+  </style>
+</head>
+<body>
+  <h1>XREAL microphone test</h1>
+  <p>Keep the glasses plugged into this phone. On this Android device, use <strong>Default</strong>:
+     Android routes it to XREAL while the glasses are connected. A named USB row without a selectable
+     device ID cannot be opened by the browser.</p>
+  <p>This page tests sound classification only. Opening it may pause another tab’s microphone on the phone.</p>
+  <button id="sound-refresh">Check microphones</button>
+  <label>Glasses microphone<br><select id="sound-mic"><option value="">Choose an input</option></select></label>
+  <button id="sound-start">Start sounds</button>
+  <button id="sound-stop" disabled>Stop sounds</button>
+  <p id="sound-status" role="status" style="padding:12px;border:1px solid #777">First check which microphones the phone exposes.</p>
+  <h2>Classification</h2>
+  <p id="sound-results" role="status" aria-live="polite">Results will appear here.</p>
+  <script type="module">
+    import { bindSoundUi } from './sound.js';
+    bindSoundUi();
+  </script>
+</body>
+</html>

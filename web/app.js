@@ -5,6 +5,7 @@ import { createProvider, listProviders } from './stt/provider.js';
 import { openMic, closeMic, listMics } from './stt/mic.js';
 import './stt/speechmatics.js';
 import './stt/mic-test.js';
+import { bindSoundUi } from './sound.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
@@ -229,12 +230,14 @@ function resetTranscript() {
 // and leave one provider recording from a microphone the other one just closed.
 let sttQueue = Promise.resolve();
 let sttGeneration = 0;
+let soundControls;
 function startStt() {
   sttQueue = sttQueue.catch(() => {}).then(startSttNow);
   return sttQueue;
 }
 
 async function startSttNow() {
+  soundControls?.speechChanging();
   stopStt();
   resetTranscript();
   const generation = ++sttGeneration;
@@ -259,7 +262,12 @@ async function startSttNow() {
     watchMic(state.mic);
   }
   state.provider = provider;
-  try { await provider.start(state.mic); }
+  try {
+    await provider.start(state.mic);
+    // Reuse the already-open microphone. Android often permits only one capture route, while an
+    // AudioContext can safely fan the same MediaStream out to Speechmatics and Jetson YAMNet.
+    soundControls?.startWithSpeech(state.mic);
+  }
   catch (e) { stopStt(); throw e; }
 }
 
@@ -356,6 +364,7 @@ function setStartStatus(extra) {
 }
 
 async function init() {
+  soundControls = bindSoundUi({ speechTrack: () => state.mic?.getAudioTracks()[0] });
   let config = { defaultStt: 'speechmatics' };
   try { config = await (await fetch('/config')).json(); } catch {}
   if (Number.isFinite(config.aspect) && config.aspect > 0) cal.videoAspect = config.aspect;

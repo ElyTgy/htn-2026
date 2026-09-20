@@ -4,6 +4,7 @@ picamera2 is installed with apt on Raspberry Pi OS, not pip, so the virtualenv
 must be created with --system-site-packages.
 """
 import time
+from libcamera import Transform
 
 
 class Picamera2Source:
@@ -20,6 +21,7 @@ class Picamera2Source:
             main={"size": (self.cfg.width, self.cfg.height), "format": "BGR888"},
             controls={"FrameRate": self.cfg.fps},
             buffer_count=2,
+            transform=Transform(hflip=1, vflip=1),
         )
         self._cam.configure(config)
         if "AfMode" in self._cam.camera_controls:

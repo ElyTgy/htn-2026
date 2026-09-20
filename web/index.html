@@ -10,6 +10,7 @@
   <img id="video" alt="" hidden>
   <div id="stage"></div>
   <div id="hud" hidden></div>
+  <div id="sound-results" role="status" aria-live="polite"></div>
 
   <div id="start">
     <h1>Caption Glasses</h1>
@@ -24,8 +25,14 @@
   </div>
   <div id="settings" hidden>
     <h2>Settings</h2>
-    <label>Microphone <select id="mic-select"></select></label>
+    <label>Speech microphone <select id="mic-select"></select></label>
     <label>Transcription <select id="stt-select"></select></label>
+    <h3>Environmental sounds</h3>
+    <p class="hint">YAMNet starts automatically from the same microphone as transcription.</p>
+    <button id="sound-refresh">Check microphones</button>
+    <label>Glasses microphone <select id="sound-mic"><option value="">Choose an input</option></select></label>
+    <div class="row"><button id="sound-start">Start sounds</button><button id="sound-stop" disabled>Stop sounds</button></div>
+    <p id="sound-status" role="status">Select the XREAL / USB input separately from the speech microphone.</p>
     <label class="row"><input type="checkbox" id="debug-toggle"> Show face boxes</label>
     <label class="row"><input type="checkbox" id="video-toggle"> Debug camera feed</label>
     <p class="hint">Off: dark HUD for the glasses. On: OAK video behind boxes and subtitles.</p>

@@ -19,6 +19,7 @@ from aiohttp import web
 from dotenv import load_dotenv
 
 from config import CERT_DIR, ROOT, WEB_DIR
+from yamnet_stream import YAMNetSocket
 
 
 @web.middleware
@@ -39,9 +40,11 @@ class CaptionServer:
         self.clients: dict[web.WebSocketResponse, asyncio.Queue[str]] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
         self.app = web.Application(middlewares=[no_cache])
+        self.yamnet = YAMNetSocket()
         self.app.add_routes([
             web.get("/", self.index),
             web.get("/ws", self.ws),
+            web.get("/sound-ws", self.yamnet.handle),
             web.get("/config", self.config),
             web.post("/settings", self.settings),
             web.get("/stt-token", self.stt_token),

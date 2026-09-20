@@ -1,5 +1,10 @@
 # Jetson Orin Nano 8 GB build
 
+> Legacy implementation runbook: the new hardware setup is documented in
+> [Current hardware architecture](CURRENT_ARCHITECTURE.md). It uses OAK-1 on the Jetson and
+> standalone Arduino → TITAN haptics. The USB-serial bridge wiring below describes the previous
+> build, not the new setup; see the architecture document for implementation gaps.
+
 This is a parallel build. The Raspberry Pi code and scripts remain available; the Jetson reuses the
 same face tracking, caption server, browser page, Beam Pro, and XREAL flow. Only the host/camera path
 and the sound-sensor/haptic transport differ.
