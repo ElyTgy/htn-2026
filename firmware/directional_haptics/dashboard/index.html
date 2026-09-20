@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Three microphones · live comparison</title><link rel="stylesheet" href="style.css?v=3.0.0"></head>
+<body>
+<header><div><h1>Three microphones · three haptics</h1><p>A1 · Left &nbsp; A2 · Right &nbsp; A0 · Back — three SparkFun envelopes</p></div><span class="version">Directional haptics v3.0.0</span></header>
+<p class="small"><a href="?demo=1">Open a clearly labeled display simulation</a> · <a href="?v=3.0.0">Live hardware</a></p>
+<div class="status" id="status" role="status">Connecting to the local recorder…</div>
+<section class="capture" aria-label="Individual sensor view">
+<div class="controls"><label for="viewSensor">View sensor</label><select id="viewSensor"><option value="all">All together</option><option value="apart">Apart</option><option value="1">A1 · Left only</option><option value="2">A2 · Right only</option><option value="0">A0 · Back only</option></select><label for="chartScale">Chart scale</label><select id="chartScale"><option value="auto">Automatic</option><option value="fixed">Fixed 0 to chosen maximum</option></select><label for="chartMaximum">Maximum ADC counts</label><input id="chartMaximum" type="number" min="1" max="1023" step="1" value="100" disabled></div>
+<p id="gainHint" class="small">Choose one input to inspect its own graph. All three inputs continue to be sampled and recorded. Chart scale changes the display only; hardware gain is set on the sensor board.</p>
+<p class="small">Calibrate the microphones side by side with equal sound exposure, then place A1 left, A2 right, and A0 back. Raw readings always remain available. The Uno runs calibration, smoothing, and motor control.</p>
+</section>
+<section class="capture firmware-panel" aria-label="Firmware controls">
+<h2>Calibration &amp; haptics</h2><p id="firmwareState" class="small" role="status">Waiting for Rev 3 firmware</p>
+<div class="controls"><button data-command="REFERENCE">Match microphones · 5 s</button><button data-command="CANCEL">Cancel calibration</button><button data-command="SAVE">Save settings</button><button data-command="MUTE">Mute</button><button data-command="RESUME">Resume</button></div>
+<p class="small">Quiet calibration measures and saves the noise floor with motors silent. Full intensity is reserved for envelope readings near 970 / 1023. Optional: place all microphones side by side, play one steady sound equally to them, then Match microphones. This corrects directional comparison, without treating the reference sound as maximum loudness.</p>
+<div class="controls"><label for="ceiling">Intensity ceiling (%)</label><input id="ceiling" type="number" min="0" max="100" value="100"><button id="setCeiling">Apply ceiling</button></div>
+<div class="controls"><label for="sensitivity">Quiet sound sensitivity</label><select id="sensitivity"><option value="1">1 · least boost</option><option value="2">2 · gentle</option><option value="3" selected>3 · balanced</option><option value="4">4 · more boost</option><option value="5">5 · strongest boost</option></select><button id="setSensitivity">Apply sensitivity</button><label for="contrast">Directional contrast</label><select id="contrast"><option value="0">Off</option><option value="10">Gentle</option><option value="15" selected>Clear</option><option value="20">Strong</option><option value="30">Strongest</option></select><button id="setContrast">Apply contrast</button></div>
+<p class="small" id="mappingState">No vibration at the measured noise floor. Above it, sensitivity lifts quieter activity and contrast reduces the quieter sides. Motor frequencies: left/red LF 95 Hz · back/white HF 160 Hz · right/yellow MF 130 Hz. Save settings to retain adjustments after restart.</p>
+<div id="motorBars" class="motor-bars"></div>
+<p id="firmwareAck" class="small" role="status"></p>
+<details><summary>TITAN setup &amp; motor trims</summary>
+<p class="small">Leave the TITAN mode jumper removed. Its RXD/TXD header shares the USB UART: use one transmitting source at a time. Identify the installed VH version. Each individual qualification test is one second at full command. The one-second unequal overlap uses left 40%, back 70%, right 100% to keep the weaker motors perceptible. Confirm the named motors start, remain independent, and stop. Stock finite effects need a smooth-playback check before normal use.</p>
+<div class="controls"><button data-command="PROBE">Probe header UART</button><label for="profile">Confirmed VH version</label><select id="profile"><option value="0">Unknown</option><option value="20">VH 2.0</option><option value="21">VH 2.1</option></select><button id="setProfile">Apply version</button></div>
+<div class="controls"><button data-command="TEST" data-value="1">Test left</button><button data-command="TEST" data-value="2">Test right</button><button data-command="TEST" data-value="3">Test back</button><button data-command="TEST" data-value="4">Test overlap</button></div>
+<label class="small"><input type="checkbox" id="observed"> I observed the correct channels, independent overlap, and bounded stopping.</label><button id="qualify">Use tested setup</button>
+<div class="controls"><label for="trim1">Left trim (%)</label><input id="trim1" type="number" min="25" max="100" value="100"><button data-trim="1">Apply left trim</button><label for="trim2">Right trim (%)</label><input id="trim2" type="number" min="25" max="100" value="100"><button data-trim="2">Apply right trim</button><label for="trim0">Back trim (%)</label><input id="trim0" type="number" min="25" max="100" value="100"><button data-trim="0">Apply back trim</button></div>
+</details></section>
+<section class="capture" aria-label="Recording controls">
+  <div class="capture-head"><div><span class="small" id="recordingState">Recorder</span><div class="clock" id="elapsed">00:00.0</div></div><div class="capture-path"><b id="take">Waiting for a take</b><span id="saved">No readings received yet</span></div></div>
+  <div class="controls"><button class="primary" id="newTake">Start new take</button><button id="stop">Stop recording</button><button id="quiet">Quiet calibration · 5 s</button><button id="reconnect">Reconnect USB</button><a class="button" href="/api/download.csv" download>Download CSV</a></div>
+  <div class="controls marker-controls"><label for="eventLabel">Event note</label><input id="eventLabel" placeholder="e.g. apart · sound from left" maxlength="160"><button id="mark">Mark event</button></div>
+  <p class="small" id="captureHelp">Readings are recorded automatically on this computer. Graphs use the same capture stream. Closing this page does not stop capture.</p>
+  <p id="baselineResult" class="small">Calibration is performed and stored on the Uno.</p>
+  <div id="events" class="events" aria-label="Recent event markers"></div>
+</section>
+<section class="chart"><div class="chart-heading"><h2 id="compareTitle">All three on the same timeline</h2><label>Compare <select id="compareMode"><option value="response">Sound response</option><option value="p2p">Peak-to-peak</option><option value="normalized">ADC range above floor (%)</option><option value="smoothed">Smoothed directional output (%)</option><option value="desired">Requested haptic (%)</option><option value="peak">Short-window peak</option><option value="mean" selected>Raw envelope mean</option></select></label></div>
+  <p class="small" id="compareHelp">All three inputs use their envelope mean. Together and Apart share the same amplitude scale and timeline.</p>
+  <div class="legend" id="compareLegend"><span class="a0" data-channel="0">● A0 · Back</span><span class="a1" data-channel="1">● A1 · Left</span><span class="a2" data-channel="2">● A2 · Right</span></div>
+  <canvas id="comparePlot" role="img" aria-label="A0, A1 and A2 on one shared time and amplitude axis"></canvas>
+  <div id="apartPlots" hidden></div>
+  <p id="timing" class="small">Waiting for readings</p>
+</section>
+<div class="hint"><p>Together and Apart above use identical axes. The detailed sensor panels below retain their individual zoom and raw statistics. All charts show the same 30-second timeline.</p></div>
+<div id="sensors"></div>
+<p class="small" id="errors" role="alert"></p>
+<footer>A1 → TITAN L · A2 → R · A0 → M. Bars are command levels, not measured vibration. Calibration/settings save to EEPROM; normal output requires a tested TITAN setup. A0/A1/A2 are sampled in sequence, within approximately one sampling cycle—not simultaneously. The charts show 40 ms summaries, not every audio sample. Values are relative ADC readings, not calibrated dB SPL.</footer>
+<script type="module" src="app.mjs?v=3.0.0"></script></body></html>

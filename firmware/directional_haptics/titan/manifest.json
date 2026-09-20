@@ -1,0 +1,10 @@
+{
+  "vendor": "TITAN Haptics",
+  "board": "TITAN Core ESP32",
+  "version": "VH 2.1",
+  "url": "https://vhterminal.titanhaptics.com/firmware/TITAN_CORE_DK_VH2.1.bin",
+  "sha256": "2a85627b4c5b2833d8b35a3b6ba22657c3b7456d0b1f6105864436c59161aeec",
+  "size": 1545968,
+  "offset": "0x1000",
+  "source": "https://vhterminal.titanhaptics.com/flash.html"
+}
