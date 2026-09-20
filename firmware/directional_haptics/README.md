@@ -4,7 +4,7 @@ Three SparkFun SEN-12642 ENVELOPE signals drive left, right and back DRAKE motor
 
 See [microphone and motor maximums](docs/MAXIMUMS.md) for the exact A0/A1/A2 full-output point, motor channels, command frequencies, 100% command strings, and the observed difference in sensation between the red, yellow, and white motors.
 
-**Bench candidate:** the Uno build and host tests pass. Rev 3 has not yet been flashed or physically qualified. The stock TITAN adapter's repeated short effects, independent overlap, stopping and latency still need bench validation. See [the test record](docs/TEST_RECORD.md) before enabling output.
+**Bench candidate:** the Uno build and host tests pass and Rev 3 runs on this kit's Uno and TITAN. The stock TITAN firmware plays **one effect at a time**, so several active motors take turns in 50 ms slots rather than vibrating at the same instant (see Behavior). How that rotation feels, and input-to-motor latency, still need bench validation. See [the test record](docs/TEST_RECORD.md) before enabling output.
 
 ## Wiring
 
@@ -43,8 +43,9 @@ Above each threshold:
 1. Measure the fraction of the ADC range from the opening level (noise floor + loudness threshold) up to **970 / 1023 counts**. A normal speech/reference sound does not redefine maximum output.
 2. Apply a fixed sensitivity curve. The default is `x^0.4`; levels 1–5 use exponents 0.8, 0.6, 0.4, 0.3, 0.2. This lifts small sound changes without automatic gain control.
 3. Compare the three excess amplitudes. Directional contrast suppresses quieter sides and fades near full scale. It never creates output on a silent channel. The default exponent is `1.5 × (1 − x)²` applied to the ratio to the loudest channel.
-4. Smooth with approximately 5 ms attack / 50 ms release while above the floor. Returning to the floor clears the command immediately.
-5. Apply the intensity ceiling and each motor's trim. The default ceiling is 100%, matching the requested tested maximum; trim can reduce a stronger motor.
+4. Share TITAN between the motors. TITAN's stock serial interface runs one effect at a time, so every 50 ms the Uno sends one 40 ms effect to the next motor in rotation that wants output, at that motor's own level. One active motor pulses 40 ms in every 50; with three active, each gets 40 ms in every 150. A sound moving from left to back to right therefore fades the left pulses down while the back pulses rise. True same-instant vibration of several motors would need different TITAN firmware.
+5. Smooth with approximately 5 ms attack / 50 ms release while above the floor. Returning to the floor clears the command immediately.
+6. Apply the intensity ceiling and each motor's trim. The default ceiling is 100%, matching the requested tested maximum; trim can reduce a stronger motor.
 
 Optional **Match microphones** uses five seconds of the same steady sound reaching all three equally. It saves fixed gain corrections (0.5–2×) for directional comparison. It does not change the 970-count full-scale point or equalize motor sensation. LF, MF and HF motors feel different at the same numerical command.
 
@@ -109,8 +110,8 @@ Closing the browser does not stop the recorder or the Uno. Stopping the recorder
 ## First setup and validation
 
 1. Identify the installed TITAN version, select it under TITAN setup and apply. Changing it mutes output and clears qualification.
-2. With the motors in hand, run each motor test and the unequal overlap test. Individual qualification pulses are one second at 100%. The overlap is one second with left 40%, back 70%, right 100%, chosen so the weaker MF/HF variants remain perceptible. Wait for each to stop before continuing.
-3. Verify correct channels, independent concurrent playback, finite stopping and smooth repeated effects. The on-screen checkbox records the human observation; command acknowledgment alone proves none of these.
+2. With the motors in hand, run each motor test and the rotation test. Individual qualification pulses are one second at 100%. The rotation test runs two seconds of the normal 50 ms slots with left 40%, back 70%, right 100%, chosen so the weaker MF/HF variants remain perceptible. Wait for each to stop before continuing.
+3. Verify correct channels, that all three motors are felt at their own strengths during the rotation, finite stopping and acceptable repeated effects. The on-screen checkbox records the human observation; command acknowledgment alone proves none of these.
 4. Use Quiet calibration during five seconds of representative quiet with motors off. Talking during this step raises the measured floor. Optional: match microphones side by side using steady equal exposure, then restore their beanie positions.
 5. Resume. Compare quiet, distant activity, speech, a clap and a moving source. Adjust sensitivity and contrast; trim the red motor if its sensation dominates. Save settings and wait for `SAVED`.
 6. Disconnect the browser, then the computer. Power-cycle both boards on their intended power supplies. Confirm the calibration/settings reload and sound drives the same spatial pattern autonomously.
@@ -127,6 +128,6 @@ python tools/analyze_capture.py recordings/take-EXAMPLE/readings.csv
 
 The native harness executes the actual sketch against ADC/serial/EEPROM stubs; it tests logic and packet formatting, not AVR execution time, UART voltage or physical sensation. [Protocol details](docs/PROTOCOL.md), [test record](docs/TEST_RECORD.md), and [change notes](docs/CHANGES.md) explain the limits.
 
-The candidate adapter sends finite 30 ms effects. A level change of at least 1% may transmit eight milliseconds after the previous completed write; an unchanged level refreshes every 25 ms. There is a sampling loop between channel writes and only one write per loop. This is intended to keep stable traffic bounded while leaving room for a sub-20 ms changed-channel target, but it is not proof of that target. Queuing/replacement behavior of stock firmware and timing with all motors active must be measured before release. Do not lengthen durations or stream faster on the assumption that TITAN replaces queued effects.
+The adapter sends one finite 40 ms effect per 50 ms slot, ending each line with CR LF. Measured on this kit's TITAN (VH 2.0.1.0): effects sent together for different channels play one after another; a line ending in CR alone that arrives while an effect plays has its CR glued to the next `CHNL`, which TITAN rejects, so the effect plays on the previously selected motor; and a short effect costs its duration plus about 10 ms. The earlier cadence (30 ms effects, up to 120 commands per second) sent 477 effects in 10 s, of which TITAN finished 63, with 455 rejected channel selections and a 1.25 s tail after mute. The slot scheduler sent 67 and TITAN finished 67, with no rejections and the last effect ending 15 ms after mute. Do not shorten the slot below the effect duration plus about 10 ms: 30 ms effects every 33 ms built a backlog.
 
 Vendor references: [serial terminal](https://vhterminal.titanhaptics.com/), [official flasher](https://vhterminal.titanhaptics.com/flash.html), [TITAN Core](https://titanhaptics.com/titan-core-development-kit/), [mode selection](https://titanhaptics.com/carlton-quickstart/), [DRAKE variants](https://titanhaptics.com/drake/).

@@ -16,7 +16,7 @@ SoftwareSerial titan(2,3);
 dh::Window window,report;
 dh::Calibration calibration={};dh::Moments moments[3];dh::Envelope envelope[3];
 float amplitude[3]={},peak[3]={},quietFloor[3]={},quietClose[3]={},quietSd[3]={};
-uint16_t desired[3]={},sent[3]={};
+uint16_t desired[3]={},sent[3]={},forced[3]={};
 uint32_t sentAt[3]={},expiresAt[3]={},riseAt[3]={};
 bool calibrated=false,qualified=false,muted=false,quietReady=false,saving=false,phaseBad=false,telemetryOn=true;
 uint8_t profile=0,ceiling=100,trim[3]={100,100,100},sensitivity=3,contrast=15,phase=0,testMask=0,nextChannel=0,startupStep=0,threshold=THRESHOLD_DEFAULT;
@@ -53,7 +53,7 @@ void drain(){
  uint8_t n=txLength-txOffset;if(n>16)n=16;int available=Serial.availableForWrite();if(n>available)n=available;
  if(n)txOffset+=Serial.write(tx+txOffset,n);
 }
-void clearLevels(){for(uint8_t i=0;i<3;i++){envelope[i].clear();desired[i]=0;riseAt[i]=0;}}
+void clearLevels(){for(uint8_t i=0;i<3;i++){envelope[i].clear();desired[i]=forced[i]=0;riseAt[i]=0;}}
 void loadSaved(){
  // Dedicated slots: previous Rev 1 and unshipped sensor-draft EEPROM untouched.
  uint8_t t=EEPROM.read(THRESHOLD_AT);if(t<=THRESHOLD_MAX&&EEPROM.read(THRESHOLD_AT+1)==(uint8_t)~t)threshold=t;
@@ -137,21 +137,24 @@ void serviceStartup(){
  uint8_t i=startupStep==0?1:startupStep==1?0:2;uint16_t level=(uint16_t)ceiling*trim[i]/10;
  clearLevels();if(level)sendEffect(i,level,STARTUP_EFFECT_MS);
  if(!startupStep)event(0,"OK","STARTUP_SEQUENCE");
- testUntil=millis()+STARTUP_EFFECT_MS+10;++startupStep;
+ testUntil=millis()+STARTUP_EFFECT_MS+TITAN_GUARD_MS;++startupStep;
 }
 void serviceMotors(){
  for(uint8_t i=0;i<3;i++)if(sent[i]&&(int32_t)(millis()-expiresAt[i])>=0)sent[i]=0;
- if(testUntil){if((int32_t)(millis()-testUntil)<0)return;testUntil=0;}
- if(!calibrated||!qualified||muted||phase||saving||probeUntil||micros()-processedAt>20000UL)return;
- // At most ONE motor command per sensing loop. Sample between channel writes.
- // Changed levels may pre-empt the stable refresh cadence. At most one write is
- // performed per sensing loop, and all effects remain finite.
+ // TEST 4 forces fixed levels through the same slot rotation that sound uses.
+ bool forcing=false;
+ if(testUntil){
+   if((int32_t)(millis()-testUntil)>=0){testUntil=0;forced[0]=forced[1]=forced[2]=0;}
+   else if(forced[0]||forced[1]||forced[2])forcing=true;
+   else return;
+ }
+ if(!forcing&&(!calibrated||!qualified||muted||phase||saving||probeUntil||micros()-processedAt>20000UL))return;
+ // TITAN plays one effect at a time, so one effect goes out per slot, to the
+ // next channel in rotation that wants output. All effects remain finite.
+ if(micros()-lastTxAt<TITAN_SLOT_US)return;
  for(uint8_t k=0;k<3;k++){
-   uint8_t i=nextChannel;nextChannel=(nextChannel+1)%3;
-   uint32_t age=micros()-sentAt[i];uint16_t difference=desired[i]>sent[i]?desired[i]-sent[i]:sent[i]-desired[i];
-   if(desired[i]&&((difference>=TITAN_CHANGE_PERMILLE&&age>=TITAN_CHANGE_US)||age>=TITAN_REFRESH_US)){
-     sendEffect(i,desired[i],TITAN_EFFECT_MS);return;
-   }
+   uint8_t i=nextChannel;nextChannel=(nextChannel+1)%3;uint16_t level=forcing?forced[i]:desired[i];
+   if(level){sendEffect(i,level,TITAN_EFFECT_MS);return;}
  }
 }
 void executeCommand(char*line){
@@ -178,9 +181,9 @@ void executeCommand(char*line){
    else if(micros()-lastTxAt<300000UL)event(id,"ERR","WAIT_BETWEEN_TESTS");
    else {
      muted=true;clearLevels();
-     if(value==4){sendEffect(1,400,TITAN_TEST_MS);sendEffect(0,700,TITAN_TEST_MS);sendEffect(2,1000,TITAN_TEST_MS);}
-     else sendEffect(value==1?1:value==2?2:0,1000,TITAN_TEST_MS);
-     testUntil=millis()+TITAN_TEST_MS+10;testMask|=1<<(value-1);event(id,"OK","TEST_SENT_OBSERVE_START_AND_STOP");
+     if(value==4){forced[1]=400;forced[0]=700;forced[2]=1000;testUntil=millis()+TITAN_SLICED_TEST_MS;}
+     else {sendEffect(value==1?1:value==2?2:0,1000,TITAN_TEST_MS);testUntil=millis()+TITAN_TEST_MS+TITAN_GUARD_MS;}
+     testMask|=1<<(value-1);event(id,"OK","TEST_SENT_OBSERVE_START_AND_STOP");
    }
  }
  else if(!strcmp_P(name,PSTR("QUALIFY"))&&value==1){if(profile&&testMask==15){qualified=true;event(id,"OK","SETUP_QUALIFIED_SAVE_TO_KEEP");}else event(id,"ERR","TEST_ALL_CHANNELS_AND_OVERLAP");}

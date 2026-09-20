@@ -44,4 +44,4 @@ normalized[i] = clamp((envelope[i] - floor[i]) / (970 - floor[i]), 0, 1)
 
 Sensitivity, directional contrast, smoothing, the global ceiling, and motor trim are applied afterward. A 100% microphone-side result therefore produces less than a 100% motor command when the ceiling or that motor's trim is below 100%.
 
-The one-second overlap qualification test is intentionally unequal—left 40%, back 70%, right 100%—so the weaker MF/HF motors are easier to distinguish. Those overlap values are test levels, not their maximums.
+The two-second rotation qualification test is intentionally unequal—left 40%, back 70%, right 100%—so the weaker MF/HF motors are easier to distinguish. TITAN plays one effect at a time, so the motors take turns in 50 ms slots. Those values are test levels, not their maximums.

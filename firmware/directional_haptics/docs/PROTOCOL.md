@@ -21,7 +21,7 @@ ASCII line: `D3 <id> <name> <integer>\n` (optional CR before LF). IDs 1–65535.
 | TRIM0 / TRIM1 / TRIM2 | 25–100 | Back / left / right motor trim |
 | PROFILE | 0, 20, 21 | Unknown / VH 2.0 / VH 2.1; mutes and clears qualification |
 | PROBE | 0 | Bounded `HDI D` header query; keeps output muted |
-| TEST | 1–4 | Left / right / back / unequal overlap finite test |
+| TEST | 1–4 | Left / right / back one-second test; 4 = two seconds of the normal slot rotation at left 40%, back 70%, right 100% |
 | QUALIFY | 1 | Records observation after all four tests were sent |
 | TELEMETRY | 0, 1 | Debug-only report disable/enable; ACK/settings continue |
 
@@ -44,8 +44,8 @@ ADC window means, amplitudes, thresholds and peaks are unsigned Q4 (divide by 16
 Per-channel `CHNL` values are L=1, R=2, M=3. Vendor terminal command order differs:
 
 ```text
-VH 2.0: CHNL <channel>;vibrate <frequency> <0.000–1.000> <duration_ms> 1 0;\r
-VH 2.1: CHNL <channel>;vibrate <duration_ms> <0.000–1.000> <frequency> 0;\r
+VH 2.0: CHNL <channel>;vibrate <frequency> <0.000–1.000> <duration_ms> 1 0;\r\n
+VH 2.1: CHNL <channel>;vibrate <duration_ms> <0.000–1.000> <frequency> 0;\r\n
 ```
 
-Only `TitanAdapter.h` formats these commands. Current short-effect cadence is a bench candidate. Correct syntax does not establish header compatibility, simultaneous playback, queue bounds or physical stopping.
+Only `TitanAdapter.h` formats these commands. Lines end with CR LF: with CR alone, a line arriving while an effect plays has its `CHNL` rejected and plays on the previously selected motor. TITAN (VH 2.0.1.0) runs one effect at a time, so the Uno sends one 40 ms effect per 50 ms slot to the next active channel in rotation. VH 2.1 behavior is untested. `updateRate` therefore tops out near 20 commands per second across all motors.
